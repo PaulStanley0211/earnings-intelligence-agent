@@ -24,6 +24,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
+# revision identifiers, used by Alembic.
 revision = "0003_phase3_schema"
 down_revision: str | None = "0002_phase2_schema"
 branch_labels: tuple[str, ...] | None = None
@@ -84,8 +85,10 @@ def upgrade() -> None:
     )
     # Replace the array placeholder with a real pgvector column. Alembic's
     # native sa.dialects.postgresql does not include the vector type, so we
-    # alter via raw SQL after the table exists. The embedding stays NULL-able
-    # so a degraded run can persist text without vectors.
+    # alter via raw SQL after the table exists. The table has no rows at this
+    # point, so USING NULL discards nothing; it merely satisfies PostgreSQL's
+    # requirement for an explicit conversion expression. The column stays
+    # NULL-able so a degraded run can persist text without vectors.
     op.execute(
         "ALTER TABLE filing_sections "
         "ALTER COLUMN embedding TYPE vector(1536) USING NULL"
