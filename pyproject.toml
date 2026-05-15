@@ -114,7 +114,7 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
-module = ["arelle.*", "rq.*", "finnhub.*", "yfinance.*"]
+module = ["arelle.*", "rq.*", "finnhub.*", "yfinance.*", "pgvector.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

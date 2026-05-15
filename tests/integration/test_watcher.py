@@ -13,6 +13,7 @@ from datetime import date
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.watcher import PollResult, poll_once
@@ -54,6 +55,7 @@ async def session() -> AsyncIterator[AsyncSession]:
     """Clean schema per-test so we can assert on insert counts."""
     engine = build_engine(echo=False)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSession(engine, expire_on_commit=False) as live:

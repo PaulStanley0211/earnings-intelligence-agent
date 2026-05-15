@@ -20,7 +20,12 @@ Phase 2 adds two:
 - ``comparisons``: the comparator's per-metric reported-vs-consensus row,
   one per filing and metric.
 
-pgvector and the language-diff tables land in Phase 3 next to that work.
+Phase 3 adds two:
+
+- ``filing_sections``: one row per paragraph of a parsed MD&A or Risk Factors
+  section, with an optional pgvector embedding for similarity search.
+- ``language_diffs``: material changes (added / removed / modified) between a
+  current and prior quarter's section, as produced by the language-differ node.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -67,6 +73,7 @@ class Filing(Base):
     form: Mapped[str] = mapped_column(String(8), nullable=False)
     filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    primary_document: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="detected")
@@ -285,4 +292,120 @@ class Comparison(Base):
             name="comparisons_direction_valid",
         ),
         Index("ix_comparisons_filing_accession", "filing_accession"),
+    )
+
+
+class FilingSection(Base):
+    """One paragraph of a parsed MD&A or Risk Factors section.
+
+    The differ persists every paragraph of every parsed section so each
+    filing seeds the next quarter's baseline, regardless of whether the
+    current run's diff itself degrades.
+    """
+
+    __tablename__ = "filing_sections"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    cik: Mapped[str] = mapped_column(String(10), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    section_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    text_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "filing_accession",
+            "section_kind",
+            "paragraph_index",
+            name="uq_filing_sections_filing_section_paragraph",
+        ),
+        CheckConstraint(
+            "section_kind IN ('mda', 'risk_factors')",
+            name="filing_sections_section_kind_valid",
+        ),
+        Index(
+            "ix_filing_sections_ticker_section_filing",
+            "ticker",
+            "section_kind",
+            "filing_accession",
+        ),
+        Index("ix_filing_sections_cik_section", "cik", "section_kind"),
+    )
+
+
+class LanguageDiff(Base):
+    """One material change between a current and prior quarter's section.
+
+    Unchanged paragraphs are NOT persisted - only ``added`` / ``removed`` /
+    ``modified`` reach the table. Severity is computed by the agent node.
+    """
+
+    __tablename__ = "language_diffs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    prior_filing_accession: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("filings.accession_number", ondelete="SET NULL"),
+        nullable=True,
+    )
+    section_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    change_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    current_section_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("filing_sections.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    prior_section_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("filing_sections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    similarity: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    severity: Mapped[str] = mapped_column(String(8), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "filing_accession",
+            "section_kind",
+            "change_type",
+            "current_section_id",
+            "prior_section_id",
+            name="uq_language_diffs_filing_section_change_pair",
+        ),
+        CheckConstraint(
+            "change_type IN ('added', 'removed', 'modified')",
+            name="language_diffs_change_type_valid",
+        ),
+        CheckConstraint(
+            "severity IN ('major', 'minor')",
+            name="language_diffs_severity_valid",
+        ),
+        CheckConstraint(
+            "section_kind IN ('mda', 'risk_factors')",
+            name="language_diffs_section_kind_valid",
+        ),
+        Index(
+            "ix_language_diffs_filing_section",
+            "filing_accession",
+            "section_kind",
+        ),
     )

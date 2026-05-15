@@ -14,6 +14,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.db import build_engine
@@ -35,9 +36,16 @@ pytestmark = pytest.mark.integration
 
 @pytest_asyncio.fixture()
 async def session() -> AsyncIterator[AsyncSession]:
-    """Build an engine, recreate the schema, yield a clean session."""
+    """Build an engine, recreate the schema, yield a clean session.
+
+    The pgvector extension must be enabled before ``create_all`` so the
+    ``vector(1536)`` column type resolves. The extension is idempotent and
+    persists for the lifetime of the database, so enabling it here does not
+    pollute other test runs.
+    """
     engine = build_engine(echo=False)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     factory = AsyncSession
@@ -368,3 +376,81 @@ async def test_insert_comparison_upserts_on_filing_and_metric(
     rows = await repo.list_comparisons_for_filing("0000950170-25-000001")
     assert len(rows) == 1
     assert rows[0].consensus_value == Decimal("62000000000")
+
+
+# ---- Phase 3: filing_sections and language_diffs ----
+
+
+async def test_filing_section_model_roundtrips(session: AsyncSession) -> None:
+    """FilingSection rows persist and can be fetched back by section_kind."""
+    from sqlalchemy import select
+
+    from app.memory.models import FilingSection
+
+    repo = Repository(session)
+    await repo.record_filing(
+        filing=NewFiling(
+            accession_number="0000000000-26-000001",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+            source_url="https://www.sec.gov/x",
+        )
+    )
+    await session.commit()
+
+    section = FilingSection(
+        filing_accession="0000000000-26-000001",
+        cik="0000789019",
+        ticker="MSFT",
+        section_kind="mda",
+        paragraph_index=0,
+        text="The company saw strong demand.",
+        text_sha="a" * 64,
+        embedding=None,
+        embedding_model=None,
+    )
+    session.add(section)
+    await session.commit()
+
+    rows = (await session.execute(select(FilingSection))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].section_kind == "mda"
+
+
+async def test_language_diff_model_roundtrips(session: AsyncSession) -> None:
+    """LanguageDiff rows persist and can be fetched back by change_type."""
+    from sqlalchemy import select
+
+    from app.memory.models import LanguageDiff
+
+    repo = Repository(session)
+    await repo.record_filing(
+        filing=NewFiling(
+            accession_number="0000000000-26-000002",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+            source_url="https://www.sec.gov/x",
+        )
+    )
+    await session.commit()
+
+    diff = LanguageDiff(
+        filing_accession="0000000000-26-000002",
+        prior_filing_accession=None,
+        section_kind="mda",
+        change_type="added",
+        current_section_id=None,
+        prior_section_id=None,
+        similarity=None,
+        severity="major",
+    )
+    session.add(diff)
+    await session.commit()
+
+    rows = (await session.execute(select(LanguageDiff))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].change_type == "added"

@@ -29,6 +29,7 @@ async def fresh_schema() -> AsyncIterator[None]:
     await dispose_engine()
     engine = build_engine(echo=False)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     await engine.dispose()

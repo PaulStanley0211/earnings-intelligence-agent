@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.graph import build_graph
@@ -103,6 +104,7 @@ def _stub_anthropic(text: str) -> MagicMock:
 async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = build_engine(echo=False)
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
