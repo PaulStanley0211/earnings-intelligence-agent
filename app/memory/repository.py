@@ -27,6 +27,7 @@ from app.memory.models import (
     DailyLLMSpend,
     EdgarPollLog,
     Filing,
+    FilingSection,
     FinancialFact,
     WatchlistEntry,
 )
@@ -34,15 +35,18 @@ from app.memory.schemas import (
     ComparisonRecord,
     ConsensusEstimateRecord,
     FilingRecord,
+    FilingSectionRecord,
     FilingStatus,
     FinancialFactRecord,
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
+    NewFilingSection,
     NewFinancialFact,
     NewPollLog,
     PollLogRecord,
     PollStatus,
+    SectionKind,
     WatchlistRecord,
 )
 
@@ -372,3 +376,101 @@ class Repository:
         )
         result = await self._session.execute(stmt)
         return [ComparisonRecord.model_validate(row) for row in result.scalars().all()]
+
+    # ---- filing sections ----
+
+    async def insert_filing_sections(
+        self,
+        rows: Iterable[NewFilingSection],
+    ) -> int:
+        """Insert filing-section paragraphs, skipping duplicates.
+
+        Conflicts on ``(filing_accession, section_kind, paragraph_index)`` are
+        silently ignored so the differ can re-run safely without creating
+        phantom rows.  Returns the number of rows actually inserted.
+        """
+        payload = [
+            {
+                "filing_accession": row.filing_accession,
+                "cik": row.cik,
+                "ticker": row.ticker,
+                "section_kind": row.section_kind.value,
+                "paragraph_index": row.paragraph_index,
+                "text": row.text,
+                "text_sha": row.text_sha,
+                "embedding": row.embedding,
+                "embedding_model": row.embedding_model,
+            }
+            for row in rows
+        ]
+        if not payload:
+            return 0
+        stmt = (
+            pg_insert(FilingSection)
+            .values(payload)
+            .on_conflict_do_nothing(
+                constraint="uq_filing_sections_filing_section_paragraph",
+            )
+            .returning(FilingSection.id)
+        )
+        result = await self._session.execute(stmt)
+        return len(result.scalars().all())
+
+    async def update_section_embeddings(
+        self,
+        *,
+        updates: Sequence[tuple[int, list[float], str]],
+    ) -> int:
+        """Set the ``embedding`` and ``embedding_model`` columns for rows by id.
+
+        Used by the differ after a successful batched embeddings call to
+        back-fill vectors onto previously-inserted rows.  Returns the number of
+        rows actually updated.
+        """
+        if not updates:
+            return 0
+        count = 0
+        for row_id, vector, model in updates:
+            section = await self._session.get(FilingSection, row_id)
+            if section is None:
+                continue
+            section.embedding = vector
+            section.embedding_model = model
+            count += 1
+        return count
+
+    async def get_prior_quarter_sections(
+        self,
+        *,
+        ticker: str,
+        section_kind: SectionKind,
+        before: date,
+    ) -> Sequence[FilingSectionRecord]:
+        """Return paragraphs from the most-recent filing strictly before ``before``.
+
+        The differ uses this to find the baseline section to align the current
+        filing against.  The ``before`` bound is exclusive: a filing whose
+        ``filed_at`` equals ``before`` midnight UTC is NOT included.  Returns
+        ``[]`` when no prior filing with that section exists.
+        """
+        cutoff = datetime.combine(before, datetime.min.time(), tzinfo=UTC)
+        anchor_stmt = (
+            select(Filing.accession_number)
+            .join(FilingSection, FilingSection.filing_accession == Filing.accession_number)
+            .where(Filing.ticker == ticker)
+            .where(FilingSection.section_kind == section_kind.value)
+            .where(Filing.filed_at < cutoff)
+            .order_by(desc(Filing.filed_at))
+            .limit(1)
+        )
+        accession = (await self._session.execute(anchor_stmt)).scalar_one_or_none()
+        if accession is None:
+            return []
+        stmt = (
+            select(FilingSection)
+            .where(FilingSection.filing_accession == accession)
+            .where(FilingSection.section_kind == section_kind.value)
+            .order_by(FilingSection.paragraph_index)
+        )
+        result = await self._session.execute(stmt)
+        return [FilingSectionRecord.model_validate(row) for row in result.scalars().all()]

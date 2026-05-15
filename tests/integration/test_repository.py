@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.memory.db import build_engine
 from app.memory.models import Base, FilingSection, LanguageDiff
@@ -446,3 +446,161 @@ async def test_language_diff_model_roundtrips(session: AsyncSession) -> None:
     rows = (await session.execute(select(LanguageDiff))).scalars().all()
     assert len(rows) == 1
     assert rows[0].change_type == "added"
+
+
+# ---- Phase 3: repository methods for filing_sections ----
+
+
+@pytest_asyncio.fixture()
+async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    """Build an engine, recreate the schema, yield a sessionmaker.
+
+    Unlike the ``session`` fixture, this yields a factory so individual tests
+    can open and close multiple sessions to simulate separate transactions.
+    The pgvector extension is enabled idempotently before ``create_all``.
+    """
+    engine = build_engine(echo=False)
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    yield factory
+    await engine.dispose()
+
+
+async def test_insert_filing_sections_is_idempotent(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from app.memory.schemas import NewFilingSection, SectionKind
+
+    accession = "0000000000-26-000010"
+    async with session_factory() as session:
+        await Repository(session).record_filing(
+            filing=NewFiling(
+                accession_number=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                form=FilingForm.FORM_10Q,
+                filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+                source_url="https://www.sec.gov/x",
+            )
+        )
+        rows = [
+            NewFilingSection(
+                filing_accession=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                section_kind=SectionKind.MDA,
+                paragraph_index=i,
+                text=f"Paragraph {i}.",
+                text_sha=f"{i:064d}",
+                embedding=None,
+                embedding_model=None,
+            )
+            for i in range(3)
+        ]
+        first = await Repository(session).insert_filing_sections(rows)
+        await session.commit()
+
+    async with session_factory() as session:
+        second = await Repository(session).insert_filing_sections(rows)
+        await session.commit()
+
+    assert first == 3
+    assert second == 0
+
+
+async def test_update_section_embeddings_sets_vector_and_model(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    accession = "0000000000-26-000011"
+    async with session_factory() as session:
+        await Repository(session).record_filing(
+            filing=NewFiling(
+                accession_number=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                form=FilingForm.FORM_10Q,
+                filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+                source_url="https://www.sec.gov/x",
+            )
+        )
+        ids: list[int] = []
+        for i in range(2):
+            section = FilingSection(
+                filing_accession=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                section_kind="mda",
+                paragraph_index=i,
+                text=f"p{i}",
+                text_sha=f"{i:064d}",
+                embedding=None,
+                embedding_model=None,
+            )
+            session.add(section)
+            await session.flush()
+            ids.append(section.id)
+        await Repository(session).update_section_embeddings(
+            updates=[
+                (ids[0], [0.0] * 1536, "openai/text-embedding-3-small"),
+                (ids[1], [0.5] * 1536, "openai/text-embedding-3-small"),
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        rows = (
+            await session.execute(select(FilingSection).order_by(FilingSection.id))
+        ).scalars().all()
+        assert all(r.embedding is not None for r in rows)
+        assert rows[0].embedding_model == "openai/text-embedding-3-small"
+
+
+async def test_get_prior_quarter_sections_returns_most_recent_filing(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from app.memory.schemas import NewFilingSection, SectionKind
+
+    async with session_factory() as session:
+        repo = Repository(session)
+        for accession, filed in [
+            ("0000000000-26-000020", datetime(2026, 1, 25, tzinfo=UTC)),
+            ("0000000000-26-000021", datetime(2026, 4, 25, tzinfo=UTC)),
+        ]:
+            await repo.record_filing(
+                filing=NewFiling(
+                    accession_number=accession,
+                    cik="0000789019",
+                    ticker="MSFT",
+                    form=FilingForm.FORM_10Q,
+                    filed_at=filed,
+                    source_url="https://www.sec.gov/x",
+                )
+            )
+            await repo.insert_filing_sections(
+                [
+                    NewFilingSection(
+                        filing_accession=accession,
+                        cik="0000789019",
+                        ticker="MSFT",
+                        section_kind=SectionKind.MDA,
+                        paragraph_index=0,
+                        text=f"Filed at {filed.date().isoformat()}.",
+                        text_sha=accession.ljust(64, "0"),
+                        embedding=None,
+                        embedding_model=None,
+                    )
+                ]
+            )
+        await session.commit()
+
+    async with session_factory() as session:
+        rows = await Repository(session).get_prior_quarter_sections(
+            ticker="MSFT",
+            section_kind=SectionKind.MDA,
+            before=date(2026, 4, 25),
+        )
+        assert len(rows) == 1
+        assert rows[0].filing_accession == "0000000000-26-000020"
