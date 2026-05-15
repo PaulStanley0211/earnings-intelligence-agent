@@ -5,6 +5,11 @@ DTOs are what callers hand to and receive from the
 :class:`~app.memory.repository.Repository`. Keeping the boundary types
 separate from the ORM rows means callers do not need an active SQLAlchemy
 session attached to every result they want to inspect.
+
+The module is approaching the project's 300-line guideline as of Phase 3.
+Future additions should consider splitting along a clean responsibility
+boundary (numbers-track DTOs vs language-track DTOs) rather than continuing
+to grow this single module.
 """
 
 from __future__ import annotations

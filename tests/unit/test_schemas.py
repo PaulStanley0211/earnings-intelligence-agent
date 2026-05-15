@@ -32,7 +32,7 @@ def test_new_filing_section_is_frozen():
         embedding_model=None,
     )
     with pytest.raises(ValidationError):
-        row.text = "mutated"  # type: ignore[misc]
+        row.text = "mutated"
 
 
 def test_new_language_diff_defaults_optional_fields():
