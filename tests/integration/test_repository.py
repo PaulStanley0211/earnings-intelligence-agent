@@ -21,15 +21,18 @@ from app.memory.db import build_engine
 from app.memory.models import Base, FilingSection, LanguageDiff
 from app.memory.repository import Repository
 from app.memory.schemas import (
+    ChangeType,
     FilingStatus,
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
     NewFilingSection,
     NewFinancialFact,
+    NewLanguageDiff,
     NewPollLog,
     PollStatus,
     SectionKind,
+    Severity,
 )
 from app.models.state import FilingForm
 
@@ -603,3 +606,79 @@ async def test_get_prior_quarter_sections_returns_most_recent_filing(
         assert len(rows) == 1
         assert rows[0].filing_accession == "0000000000-26-000020"
         assert rows[0].text == "Filed at 2026-01-25."
+
+
+# ---- Phase 3: repository methods for language_diffs ----
+
+
+async def test_insert_language_diffs_is_idempotent(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    accession = "0000000000-26-000030"
+    async with session_factory() as session:
+        await Repository(session).record_filing(
+            filing=NewFiling(
+                accession_number=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                form=FilingForm.FORM_10Q,
+                filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+                source_url="https://www.sec.gov/x",
+            )
+        )
+        rows = [
+            NewLanguageDiff(
+                filing_accession=accession,
+                section_kind=SectionKind.MDA,
+                change_type=ChangeType.ADDED,
+                severity=Severity.MAJOR,
+            ),
+            NewLanguageDiff(
+                filing_accession=accession,
+                section_kind=SectionKind.MDA,
+                change_type=ChangeType.REMOVED,
+                severity=Severity.MINOR,
+            ),
+        ]
+        first = await Repository(session).insert_language_diffs(rows)
+        await session.commit()
+
+    async with session_factory() as session:
+        second = await Repository(session).insert_language_diffs(rows)
+        await session.commit()
+
+    assert first == 2
+    assert second == 0
+
+
+async def test_list_language_diffs_for_filing_returns_inserted_rows(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    accession = "0000000000-26-000031"
+    async with session_factory() as session:
+        await Repository(session).record_filing(
+            filing=NewFiling(
+                accession_number=accession,
+                cik="0000789019",
+                ticker="MSFT",
+                form=FilingForm.FORM_10Q,
+                filed_at=datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+                source_url="https://www.sec.gov/x",
+            )
+        )
+        await Repository(session).insert_language_diffs(
+            [
+                NewLanguageDiff(
+                    filing_accession=accession,
+                    section_kind=SectionKind.MDA,
+                    change_type=ChangeType.ADDED,
+                    severity=Severity.MAJOR,
+                )
+            ]
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        rows = await Repository(session).list_language_diffs_for_filing(accession)
+        assert len(rows) == 1
+        assert rows[0].change_type == ChangeType.ADDED

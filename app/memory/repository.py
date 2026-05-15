@@ -29,6 +29,7 @@ from app.memory.models import (
     Filing,
     FilingSection,
     FinancialFact,
+    LanguageDiff,
     WatchlistEntry,
 )
 from app.memory.schemas import (
@@ -38,11 +39,13 @@ from app.memory.schemas import (
     FilingSectionRecord,
     FilingStatus,
     FinancialFactRecord,
+    LanguageDiffRecord,
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
     NewFilingSection,
     NewFinancialFact,
+    NewLanguageDiff,
     NewPollLog,
     PollLogRecord,
     PollStatus,
@@ -474,3 +477,60 @@ class Repository:
         )
         result = await self._session.execute(stmt)
         return [FilingSectionRecord.model_validate(row) for row in result.scalars().all()]
+
+    # ---- language diffs ----
+
+    async def insert_language_diffs(
+        self,
+        rows: Iterable[NewLanguageDiff],
+    ) -> int:
+        """Insert language-diff rows, skipping duplicates.
+
+        Conflicts on the unique constraint over
+        ``(filing_accession, section_kind, change_type, current_section_id, prior_section_id)``
+        are ignored so re-running the differ for a filing is safe.
+        Returns the number of rows actually inserted.
+        """
+        payload = [
+            {
+                "filing_accession": row.filing_accession,
+                "prior_filing_accession": row.prior_filing_accession,
+                "section_kind": row.section_kind.value,
+                "change_type": row.change_type.value,
+                "current_section_id": row.current_section_id,
+                "prior_section_id": row.prior_section_id,
+                "similarity": row.similarity,
+                "severity": row.severity.value,
+            }
+            for row in rows
+        ]
+        if not payload:
+            return 0
+        stmt = (
+            pg_insert(LanguageDiff)
+            .values(payload)
+            .on_conflict_do_nothing(
+                constraint="uq_language_diffs_filing_section_change_pair",
+            )
+            .returning(LanguageDiff.id)
+        )
+        result = await self._session.execute(stmt)
+        return len(result.scalars().all())
+
+    async def list_language_diffs_for_filing(
+        self, accession_number: str
+    ) -> Sequence[LanguageDiffRecord]:
+        """Return every language-diff row attached to ``accession_number``.
+
+        Results are ordered by insertion order (``id`` ascending) so callers
+        see diffs in the sequence the differ produced them.
+        """
+        stmt = (
+            select(LanguageDiff)
+            .where(LanguageDiff.filing_accession == accession_number)
+            .order_by(LanguageDiff.id)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            LanguageDiffRecord.model_validate(row) for row in result.scalars().all()
+        ]

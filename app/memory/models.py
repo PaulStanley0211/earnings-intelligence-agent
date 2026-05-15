@@ -390,9 +390,9 @@ class LanguageDiff(Base):
     )
 
     __table_args__ = (
-        # NULLs are distinct in Postgres unique constraints, so multiple
-        # `added` rows with prior_section_id=NULL can coexist (intended:
-        # cold-start runs produce many `added` rows with no prior section).
+        # NULLS NOT DISTINCT (Postgres 15+) makes NULL == NULL inside this
+        # constraint, so re-running the differ for a cold-start filing (where
+        # both section IDs are NULL) produces exactly one row, not N duplicates.
         UniqueConstraint(
             "filing_accession",
             "section_kind",
@@ -400,6 +400,7 @@ class LanguageDiff(Base):
             "current_section_id",
             "prior_section_id",
             name="uq_language_diffs_filing_section_change_pair",
+            postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint(
             "change_type IN ('added', 'removed', 'modified')",

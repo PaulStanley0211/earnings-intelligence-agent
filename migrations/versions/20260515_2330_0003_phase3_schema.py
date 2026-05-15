@@ -153,6 +153,7 @@ def upgrade() -> None:
             "current_section_id",
             "prior_section_id",
             name="uq_language_diffs_filing_section_change_pair",
+            postgresql_nulls_not_distinct=True,
         ),
         sa.CheckConstraint(
             "change_type IN ('added', 'removed', 'modified')",
