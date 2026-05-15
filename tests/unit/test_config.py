@@ -65,12 +65,11 @@ def test_settings_accept_openai_and_embeddings_keys(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     monkeypatch.setenv("EDGAR_USER_AGENT", "Tester tester@example.com")
     monkeypatch.setenv("MAX_DAILY_LLM_COST_USD", "10.0")
-    monkeypatch.setenv("EMBEDDINGS_MODEL", "text-embedding-3-small")
-    from app.config import Settings, reset_settings_cache
+    monkeypatch.setenv("EMBEDDINGS_MODEL", "text-embedding-ada-002")
     reset_settings_cache()
     s = Settings()  # type: ignore[call-arg]
     assert s.openai_api_key.get_secret_value() == "sk-openai-test"
-    assert s.embeddings_model == "text-embedding-3-small"
+    assert s.embeddings_model == "text-embedding-ada-002"
 
 
 def test_settings_default_embeddings_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,7 +81,6 @@ def test_settings_default_embeddings_model(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("EDGAR_USER_AGENT", "Tester tester@example.com")
     monkeypatch.setenv("MAX_DAILY_LLM_COST_USD", "10.0")
     monkeypatch.delenv("EMBEDDINGS_MODEL", raising=False)
-    from app.config import Settings, reset_settings_cache
     reset_settings_cache()
     s = Settings()  # type: ignore[call-arg]
     assert s.embeddings_model == "text-embedding-3-small"
