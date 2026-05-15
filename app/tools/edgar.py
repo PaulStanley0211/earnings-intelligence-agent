@@ -41,6 +41,7 @@ from tenacity import (
 from app.observability.logging import get_logger
 
 _EDGAR_DATA_BASE: Final[str] = "https://data.sec.gov"
+_EDGAR_ARCHIVE_BASE: Final[str] = "https://www.sec.gov"
 _EDGAR_UA_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[^<>]{2,}\s+\S+@\S+\.\S+$")
 
 _logger = get_logger()
@@ -225,6 +226,37 @@ class EdgarClient:
                 return response.json()
         raise RuntimeError("unreachable: tenacity reraises on failure")
 
+    async def _get_text(self, *, base_url: str, path: str) -> str:
+        """Issue a rate-limited GET against ``base_url + path`` and return text.
+
+        Retries 5xx and network errors with exponential backoff; surfaces
+        4xx immediately as :class:`EdgarHTTPError`.
+        """
+        retrying = AsyncRetrying(
+            stop=stop_after_attempt(self._max_attempts),
+            wait=wait_exponential_jitter(
+                initial=self._backoff_initial, max=self._backoff_max
+            ),
+            retry=retry_if_exception_type((httpx.RequestError, EdgarServerError)),
+            reraise=True,
+        )
+        async for attempt in retrying:
+            with attempt:
+                async with self._rate_limiter:
+                    response = await self._http.get(
+                        f"{base_url}{path}",
+                        headers={"User-Agent": self._user_agent},
+                    )
+                if 500 <= response.status_code < 600:
+                    raise EdgarServerError(response.status_code, str(response.url))
+                if 400 <= response.status_code < 500:
+                    raise EdgarHTTPError(
+                        response.status_code, str(response.url), response.text
+                    )
+                response.raise_for_status()
+                return response.text
+        raise RuntimeError("unreachable: tenacity reraises on failure")
+
     # ---- high-level ----
 
     async def get_submissions(self, *, cik: str) -> SubmissionsResponse:
@@ -270,6 +302,26 @@ class EdgarClient:
             entity_name=str(body.get("entityName", "")),
             raw=body,
         )
+
+    async def get_filing_document(
+        self,
+        *,
+        cik: str,
+        accession_number: str,
+        primary_document: str,
+    ) -> str:
+        """Fetch the primary HTML body of a filing from EDGAR archives.
+
+        The archives host is ``www.sec.gov`` rather than the JSON ``data.sec.gov``,
+        so we override the per-request base URL. CIK is unpadded; accession
+        number has dashes stripped per the archives URL convention.
+        """
+        unpadded_cik = str(int(cik))
+        accession_no_dashes = accession_number.replace("-", "")
+        path = (
+            f"/Archives/edgar/data/{unpadded_cik}/{accession_no_dashes}/{primary_document}"
+        )
+        return await self._get_text(base_url=_EDGAR_ARCHIVE_BASE, path=path)
 
 
 def _pad_cik(cik: str) -> str:

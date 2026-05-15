@@ -240,3 +240,58 @@ async def test_get_company_facts_returns_response_with_raw_payload() -> None:
 async def test_user_agent_validation_at_construction() -> None:
     with pytest.raises(ValueError, match="EDGAR_USER_AGENT"):
         EdgarClient(user_agent="no-email-here", http_client=httpx.AsyncClient())
+
+
+# ---- get_filing_document ----
+
+
+async def test_get_filing_document_fetches_html_from_archives() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["ua"] = request.headers.get("User-Agent")
+        return httpx.Response(200, text="<html><body>10-Q body</body></html>")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(
+        base_url="https://www.sec.gov", transport=transport
+    ) as http:
+        edgar = EdgarClient(
+            user_agent="Tester tester@example.com",
+            http_client=http,
+            rate_limit_rps=100.0,
+        )
+        body = await edgar.get_filing_document(
+            cik="0000789019",
+            accession_number="0000950170-26-000050",
+            primary_document="msft-20260331.htm",
+        )
+
+    assert body == "<html><body>10-Q body</body></html>"
+    assert (
+        captured["url"]
+        == "https://www.sec.gov/Archives/edgar/data/789019/000095017026000050/msft-20260331.htm"
+    )
+    assert captured["ua"] == "Tester tester@example.com"
+
+
+async def test_get_filing_document_raises_on_4xx() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(
+        base_url="https://www.sec.gov", transport=transport
+    ) as http:
+        edgar = EdgarClient(
+            user_agent="Tester tester@example.com",
+            http_client=http,
+            rate_limit_rps=100.0,
+        )
+        with pytest.raises(EdgarHTTPError):
+            await edgar.get_filing_document(
+                cik="0000789019",
+                accession_number="0000950170-26-000050",
+                primary_document="msft-20260331.htm",
+            )
