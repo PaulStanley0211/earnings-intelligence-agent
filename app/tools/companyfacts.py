@@ -28,26 +28,50 @@ from app.tools.edgar import CompanyFactsResponse
 
 _logger = get_logger()
 
-# Conservative default concept allowlist. Phase 1 only ships financials when
-# the comparator and synthesiser are wired in, but the watcher already needs
-# a reasonable subset so ``poll_once`` can dump something useful for review.
-# The numbers track in Phase 2 will refine and extend this list.
+# Default concept allowlist for the numbers track. Phase 1 shipped a
+# conservative subset focused on income-statement headline items. Phase 2
+# extends it so the comparator has share counts (for per-share derivations),
+# operating-expense detail, balance-sheet liquidity, and operating cash flow
+# - everything the first synthesiser is allowed to cite in a numbers-only
+# note. Adding a concept here is cheap: extra rows in ``financial_facts`` are
+# the cost. Removing one risks breaking older notes that referenced it.
 DEFAULT_CONCEPT_ALLOWLIST: Final[frozenset[str]] = frozenset(
     {
+        # ---- Top line ----
         "Revenues",
         "RevenueFromContractWithCustomerExcludingAssessedTax",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
+        # ---- Income statement ----
         "CostOfRevenue",
+        "CostOfGoodsAndServicesSold",
         "GrossProfit",
+        "OperatingExpenses",
+        "ResearchAndDevelopmentExpense",
+        "SellingGeneralAndAdministrativeExpense",
         "OperatingIncomeLoss",
+        "InterestExpense",
+        "IncomeTaxExpenseBenefit",
         "NetIncomeLoss",
+        "NetIncomeLossAvailableToCommonStockholdersBasic",
+        # ---- Per-share and share counts ----
         "EarningsPerShareBasic",
         "EarningsPerShareDiluted",
+        "WeightedAverageNumberOfSharesOutstandingBasic",
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+        # ---- Balance sheet ----
         "Assets",
+        "AssetsCurrent",
         "Liabilities",
+        "LiabilitiesCurrent",
+        "LongTermDebt",
+        "LongTermDebtNoncurrent",
         "StockholdersEquity",
         "CashAndCashEquivalentsAtCarryingValue",
-        "ResearchAndDevelopmentExpense",
+        "InventoryNet",
+        # ---- Cash flow ----
+        "NetCashProvidedByUsedInOperatingActivities",
+        "NetCashProvidedByUsedInInvestingActivities",
+        "NetCashProvidedByUsedInFinancingActivities",
     }
 )
 

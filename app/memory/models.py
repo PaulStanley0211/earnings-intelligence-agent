@@ -1,17 +1,24 @@
-"""SQLAlchemy ORM declarations for the Phase 1 memory layer.
+"""SQLAlchemy ORM declarations for the memory layer.
 
 The memory layer owns every interaction with Postgres. Agent code talks to
 the :class:`~app.memory.repository.Repository` and never imports these models
 directly - this keeps the project-rule "no raw SQL in agent code" verifiable
 by inspecting imports.
 
-Phase 1 covers five tables:
+Phase 1 introduced five tables:
 
 - ``filings``: one row per detected SEC filing on the watchlist.
 - ``financial_facts``: numbers extracted from a filing's XBRL companyfacts.
 - ``watchlist``: tickers the watcher polls.
 - ``edgar_poll_log``: one row per poll cycle for the ``/health`` last-poll check.
-- ``daily_llm_spend``: Postgres-backed daily LLM cost cap (in-memory in Phase 0).
+- ``daily_llm_spend``: Postgres-backed daily LLM cost cap.
+
+Phase 2 adds two:
+
+- ``consensus_estimates``: analyst consensus values (mean) per metric/period
+  fetched from Finnhub with a yfinance fallback.
+- ``comparisons``: the comparator's per-metric reported-vs-consensus row,
+  one per filing and metric.
 
 pgvector and the language-diff tables land in Phase 3 next to that work.
 """
@@ -196,4 +203,86 @@ class DailyLLMSpend(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ConsensusEstimate(Base):
+    """Analyst consensus value for one (ticker, period, metric).
+
+    The comparator pairs each row with the matching :class:`FinancialFact` to
+    compute the per-metric surprise. Rows are append-only; the most-recent
+    row per ``(ticker, fiscal_year, fiscal_period, metric, source)`` wins via
+    the ``fetched_at`` ordering.
+    """
+
+    __tablename__ = "consensus_estimates"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    fiscal_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    fiscal_period: Mapped[str] = mapped_column(String(8), nullable=False)
+    metric: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+    analyst_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "fiscal_year",
+            "fiscal_period",
+            "metric",
+            "source",
+            name="uq_consensus_estimates_ticker_period_metric_source",
+        ),
+        CheckConstraint(
+            "source IN ('finnhub', 'yfinance')",
+            name="consensus_estimates_source_valid",
+        ),
+        Index("ix_consensus_estimates_ticker_period", "ticker", "fiscal_year", "fiscal_period"),
+    )
+
+
+class Comparison(Base):
+    """Reported vs consensus comparison for one metric on one filing.
+
+    Surprise is signed: positive means the reported value beat consensus on a
+    higher-is-better metric. The comparator owns the sign convention - see
+    :mod:`app.agents.comparator`.
+    """
+
+    __tablename__ = "comparisons"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    metric: Mapped[str] = mapped_column(String(32), nullable=False)
+    reported_value: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+    reported_unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    consensus_value: Mapped[Decimal | None] = mapped_column(Numeric(28, 6), nullable=True)
+    consensus_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    surprise_abs: Mapped[Decimal | None] = mapped_column(Numeric(28, 6), nullable=True)
+    surprise_pct: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
+    direction: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "filing_accession",
+            "metric",
+            name="uq_comparisons_filing_metric",
+        ),
+        CheckConstraint(
+            "direction IS NULL OR direction IN ('beat', 'miss', 'in_line')",
+            name="comparisons_direction_valid",
+        ),
+        Index("ix_comparisons_filing_accession", "filing_accession"),
     )

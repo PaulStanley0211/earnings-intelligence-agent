@@ -10,13 +10,15 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 1 — Foundation: complete** (commit `ae2a5e2`, PR [#1](https://github.com/PaulStanley0211/earnings-intelligence-agent/pull/1), 2026-05-15).
 
-**Phase 2 — Numbers track: in progress.**
+**Phase 2 — Numbers track: complete** (2026-05-15).
+
+**Phase 3 — Language differ: not started.**
 
 In place from Phase 0:
 - uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
 - Multi-stage [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) (Postgres + pgvector on host port 5434 to avoid Windows host-Postgres collisions, Redis, FastAPI).
 - Fail-fast Pydantic settings in [`app/config.py`](app/config.py) — every required env var validated at startup, including EDGAR User-Agent format.
-- LLM client at [`app/llm/client.py`](app/llm/client.py) with SHA-keyed cassette replay and daily cost cap that fails closed (in-process; Postgres-backed counter now exists for Phase 2 to adopt).
+- LLM client at [`app/llm/client.py`](app/llm/client.py) with SHA-keyed cassette replay and a daily cost cap that fails closed. Sync `complete()` uses an in-process counter; async `acomplete()` reads/writes the Postgres-backed `daily_llm_spend` table (Phase 2).
 - `AgentState` contract with per-node `StateUpdate` field ownership in [`app/models/state.py`](app/models/state.py).
 - Loguru JSON logging with trace-id propagation and secret scrubbing; OpenTelemetry tracing scaffolding in [`app/observability/`](app/observability/).
 - GitHub Actions CI: ruff, mypy, unit, integration (services), pip-audit, plus a nightly eval workflow.
@@ -35,10 +37,24 @@ Added in Phase 1:
 
 Gate evidence at Phase 1 close: ruff clean, mypy clean (28 source files), 62 tests green (44 unit + 18 integration), `coverage report` line coverage 85.22%.
 
-Empty stubs still awaiting later phases — do not assume contents exist:
-`app/delivery/`, `prompts/`, `evals/`, `tests/fixtures/cassettes/`.
+Added in Phase 2:
+- **Extended XBRL concept allowlist** ([`app/tools/companyfacts.py`](app/tools/companyfacts.py)). Beyond Phase 1's income-statement headline set, the synthesiser now sees share counts, operating-expense detail, balance-sheet liquidity (current assets/liabilities, long-term debt, inventory), and operating/investing/financing cash flow.
+- **Consensus tables and migration** ([`migrations/versions/20260515_2230_0002_phase2_schema.py`](migrations/versions/20260515_2230_0002_phase2_schema.py)). Two new tables: `consensus_estimates` (one row per `(ticker, fiscal_year, fiscal_period, metric, source)`) and `comparisons` (one row per filing/metric capturing reported, consensus, surprise, and direction). ORM models in [`app/memory/models.py`](app/memory/models.py); DTOs in [`app/memory/schemas.py`](app/memory/schemas.py); repository methods on [`app/memory/repository.py`](app/memory/repository.py).
+- **Consensus fetcher** ([`app/tools/consensus.py`](app/tools/consensus.py)). Two-tier strategy: Finnhub primary (`/stock/eps-estimate`, `/stock/revenue-estimate`), yfinance fallback. Both providers are Protocol-shaped for test injection. Per-source rows coexist so the comparator can prefer Finnhub when both are present.
+- **Comparator node** ([`app/agents/comparator.py`](app/agents/comparator.py)). Maps us-gaap concepts to comparator metrics (`revenue`, `eps_diluted`, `eps_basic`, `net_income`), pulls consensus, persists `consensus_estimates` and `comparisons` rows, and emits a structured summary into `AgentState.comparisons`. Direction band: ±0.5 percent is `in_line`, beyond is `beat`/`miss`. Owns the `comparisons` field via `_FIELD_OWNERS` in [`app/models/state.py`](app/models/state.py).
+- **Prompt template loader** ([`app/llm/prompts.py`](app/llm/prompts.py)). Parses YAML-ish frontmatter (`version`, `model`, `temperature`), computes a body-SHA so cassette keys move with prompt content, supports `{key}`-style placeholders.
+- **First prompt templates**: `synthesizer/numbers_v1.md` (Opus, temperature 0.0, citation-first contract) and `critic/numbers_v0.md` (deterministic, documented for symmetry).
+- **Synthesiser node** ([`app/agents/synthesizer.py`](app/agents/synthesizer.py)). Renders financials + comparisons into the Opus prompt; calls `LLMClient.acomplete` so the new Postgres-backed cost cap applies. Wraps source data in `<source>` tags per PLAN.md §3. On retry, appends previous critic findings to the user message.
+- **Deterministic critic v0** ([`app/agents/critic.py`](app/agents/critic.py)). Parses every number from the draft note, demands an adjacent `[F#]`/`[C#]` citation, resolves it against a shared citation index ([`app/agents/citations.py`](app/agents/citations.py)) used by both synthesiser and critic, and validates the cited value within metric-appropriate tolerance (1 percent relative for currency, 0.01 absolute for per-share, 0.05 absolute for percentages). Bounded retry at 3 attempts; otherwise emits `loop_exceeded`.
+- **Async LLM cost cap** ([`app/llm/client.py`](app/llm/client.py)). The new `acomplete` method reads `daily_llm_spend` via `Repository.get_daily_spend`, fails closed when adding the worst-case projection would exceed the configured cap, runs the sync Anthropic SDK in a worker thread to avoid blocking the event loop, then commits actual spend via `Repository.add_daily_spend`. The in-process counter remains for the sync `complete()` path used by lower-stakes tests.
+- **Updated LangGraph** ([`app/graph.py`](app/graph.py)). Compiled as `START -> financial_extractor -> comparator -> synthesizer -> critic -> {synthesizer | END}`. The critic-to-synthesizer conditional edge enables the bounded retry loop without manual orchestration.
 
-**Phase 2 scope.** Extend the financial extractor beyond Phase 1's allowlist, add a consensus fetcher (Finnhub primary, yfinance fallback) under `app/tools/`, build a comparator that diffs reported vs consensus, write the first synthesizer (Opus) and critic v0 (deterministic number checks). Migrate the LLM client's daily cost cap from in-process to the `daily_llm_spend` table that Phase 1 already created. Wire the new nodes into [`app/graph.py`](app/graph.py) so the graph becomes `START -> financial_extractor -> comparator -> synthesizer -> critic -> END`. Land the first prompt templates under `prompts/` with frontmatter (model, temperature, body-SHA) and the first LLM cassettes under `tests/fixtures/cassettes/`. Done when the system auto-generates a numbers-only note with zero unverified numbers — every figure in the note must trace to a row in `financial_facts` or to a recorded consensus value, and the critic blocks any draft that fails that check.
+Gate evidence at Phase 2 close: ruff clean, mypy clean (34 source files), 105 tests green (81 unit + 24 integration), `coverage report` line coverage 86 percent. `pip-audit` reports no known vulnerabilities.
+
+Empty stubs still awaiting later phases — do not assume contents exist:
+`app/delivery/`, `evals/`.
+
+**Phase 3 scope.** Build the language-differ specialist: section parser for 10-Q MD&A and Risk Factors, embedding alignment of paragraphs against the prior quarter's same section, and a change classifier that emits typed `LanguageDiff` rows. Backfill 4 prior quarters per watchlist ticker so the differ has a real baseline. Wire the new node into the graph in parallel with the comparator. Done when the differ hits 80 percent recall on the 15 hand-labelled quarter pairs (see PLAN.md §4 phase 3 gate).
 
 ## Tech stack
 

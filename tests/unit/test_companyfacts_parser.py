@@ -207,6 +207,26 @@ def test_default_concept_allowlist_covers_phase1_keys() -> None:
     assert "EarningsPerShareDiluted" in DEFAULT_CONCEPT_ALLOWLIST
 
 
+def test_default_concept_allowlist_extended_for_phase2() -> None:
+    # The synthesiser cites share counts, operating expenses, cash flow, and
+    # balance-sheet liquidity. Removing any of these would silently shrink
+    # the note's coverage, so guard them here.
+    must_have = {
+        "WeightedAverageNumberOfSharesOutstandingBasic",
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+        "OperatingExpenses",
+        "SellingGeneralAndAdministrativeExpense",
+        "InterestExpense",
+        "IncomeTaxExpenseBenefit",
+        "NetCashProvidedByUsedInOperatingActivities",
+        "InventoryNet",
+        "LongTermDebt",
+        "AssetsCurrent",
+        "LiabilitiesCurrent",
+    }
+    assert must_have <= DEFAULT_CONCEPT_ALLOWLIST
+
+
 def test_parser_handles_string_value_with_thousands_separators() -> None:
     response = _response(
         _us_gaap(

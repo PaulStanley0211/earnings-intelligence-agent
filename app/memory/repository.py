@@ -22,6 +22,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.models import (
+    Comparison,
+    ConsensusEstimate,
     DailyLLMSpend,
     EdgarPollLog,
     Filing,
@@ -29,9 +31,13 @@ from app.memory.models import (
     WatchlistEntry,
 )
 from app.memory.schemas import (
+    ComparisonRecord,
+    ConsensusEstimateRecord,
     FilingRecord,
     FilingStatus,
     FinancialFactRecord,
+    NewComparison,
+    NewConsensusEstimate,
     NewFiling,
     NewFinancialFact,
     NewPollLog,
@@ -266,3 +272,103 @@ class Repository:
         stmt = select(DailyLLMSpend.spent_usd).where(DailyLLMSpend.day == day)
         value = (await self._session.execute(stmt)).scalar_one_or_none()
         return Decimal(value) if value is not None else Decimal("0")
+
+    # ---- consensus estimates ----
+
+    async def upsert_consensus_estimate(
+        self, estimate: NewConsensusEstimate
+    ) -> ConsensusEstimateRecord:
+        """Insert or refresh an analyst consensus row.
+
+        Conflicts on ``(ticker, fiscal_year, fiscal_period, metric, source)``
+        update the value, analyst count, and ``fetched_at`` timestamp so the
+        most-recent fetch wins. Per-source rows coexist so the comparator can
+        prefer Finnhub when both are present.
+        """
+        insert_stmt = pg_insert(ConsensusEstimate).values(
+            ticker=estimate.ticker,
+            fiscal_year=estimate.fiscal_year,
+            fiscal_period=estimate.fiscal_period,
+            metric=estimate.metric,
+            value=estimate.value,
+            analyst_count=estimate.analyst_count,
+            source=estimate.source,
+        )
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            constraint="uq_consensus_estimates_ticker_period_metric_source",
+            set_={
+                "value": insert_stmt.excluded.value,
+                "analyst_count": insert_stmt.excluded.analyst_count,
+                "fetched_at": datetime.now(UTC),
+            },
+        ).returning(ConsensusEstimate)
+        result = await self._session.execute(upsert_stmt)
+        return ConsensusEstimateRecord.model_validate(result.scalar_one())
+
+    async def get_consensus_estimates(
+        self,
+        *,
+        ticker: str,
+        fiscal_year: int,
+        fiscal_period: str,
+    ) -> Sequence[ConsensusEstimateRecord]:
+        """Return every consensus row matching the (ticker, period) coordinate.
+
+        Ordered by ``source`` so callers can prefer the first row when ranking
+        by source priority (Finnhub before yfinance).
+        """
+        stmt = (
+            select(ConsensusEstimate)
+            .where(ConsensusEstimate.ticker == ticker)
+            .where(ConsensusEstimate.fiscal_year == fiscal_year)
+            .where(ConsensusEstimate.fiscal_period == fiscal_period)
+            .order_by(ConsensusEstimate.source)
+        )
+        result = await self._session.execute(stmt)
+        return [ConsensusEstimateRecord.model_validate(row) for row in result.scalars().all()]
+
+    # ---- comparisons ----
+
+    async def insert_comparison(self, comparison: NewComparison) -> ComparisonRecord:
+        """Insert one comparison row; upserts on (filing_accession, metric).
+
+        Re-running the comparator for the same filing overwrites the previous
+        values so a critic-triggered retry sees the fresh numbers.
+        """
+        insert_stmt = pg_insert(Comparison).values(
+            filing_accession=comparison.filing_accession,
+            metric=comparison.metric,
+            reported_value=comparison.reported_value,
+            reported_unit=comparison.reported_unit,
+            consensus_value=comparison.consensus_value,
+            consensus_source=comparison.consensus_source,
+            surprise_abs=comparison.surprise_abs,
+            surprise_pct=comparison.surprise_pct,
+            direction=comparison.direction,
+        )
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            constraint="uq_comparisons_filing_metric",
+            set_={
+                "reported_value": insert_stmt.excluded.reported_value,
+                "reported_unit": insert_stmt.excluded.reported_unit,
+                "consensus_value": insert_stmt.excluded.consensus_value,
+                "consensus_source": insert_stmt.excluded.consensus_source,
+                "surprise_abs": insert_stmt.excluded.surprise_abs,
+                "surprise_pct": insert_stmt.excluded.surprise_pct,
+                "direction": insert_stmt.excluded.direction,
+            },
+        ).returning(Comparison)
+        result = await self._session.execute(upsert_stmt)
+        return ComparisonRecord.model_validate(result.scalar_one())
+
+    async def list_comparisons_for_filing(
+        self, accession_number: str
+    ) -> Sequence[ComparisonRecord]:
+        """Return every comparison row for ``accession_number``, metric-sorted."""
+        stmt = (
+            select(Comparison)
+            .where(Comparison.filing_accession == accession_number)
+            .order_by(Comparison.metric)
+        )
+        result = await self._session.execute(stmt)
+        return [ComparisonRecord.model_validate(row) for row in result.scalars().all()]

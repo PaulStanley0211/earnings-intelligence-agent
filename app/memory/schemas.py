@@ -148,3 +148,75 @@ class WatchlistRecord(BaseModel):
     company_name: str
     active: bool
     added_at: datetime
+
+
+# ---- Phase 2: consensus and comparisons ----
+
+
+ConsensusSource = Literal["finnhub", "yfinance"]
+ComparisonDirection = Literal["beat", "miss", "in_line"]
+ComparisonMetric = Literal["revenue", "eps_diluted", "eps_basic", "net_income"]
+
+
+class NewConsensusEstimate(BaseModel):
+    """Inputs to :meth:`Repository.upsert_consensus_estimate`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    fiscal_year: int
+    fiscal_period: str
+    metric: ComparisonMetric
+    value: Decimal
+    analyst_count: int | None = None
+    source: ConsensusSource
+
+
+class ConsensusEstimateRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.ConsensusEstimate` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ticker: str
+    fiscal_year: int
+    fiscal_period: str
+    metric: ComparisonMetric
+    value: Decimal
+    analyst_count: int | None
+    source: ConsensusSource
+    fetched_at: datetime
+
+
+class NewComparison(BaseModel):
+    """Inputs to :meth:`Repository.insert_comparison`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    metric: ComparisonMetric
+    reported_value: Decimal
+    reported_unit: str
+    consensus_value: Decimal | None = None
+    consensus_source: ConsensusSource | None = None
+    surprise_abs: Decimal | None = None
+    surprise_pct: Decimal | None = None
+    direction: ComparisonDirection | None = None
+
+
+class ComparisonRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.Comparison` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    metric: ComparisonMetric
+    reported_value: Decimal
+    reported_unit: str
+    consensus_value: Decimal | None
+    consensus_source: ConsensusSource | None
+    surprise_abs: Decimal | None
+    surprise_pct: Decimal | None
+    direction: ComparisonDirection | None
+    created_at: datetime

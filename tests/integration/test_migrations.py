@@ -1,9 +1,13 @@
-"""Integration test for the Phase 1 Alembic migration.
+"""Integration tests for the Alembic migrations.
 
 Runs ``alembic upgrade head`` against the test database and verifies that
 each table defined by :class:`app.memory.models.Base.metadata` is present
-with the expected columns. Catching schema drift here keeps the migration
+with the expected columns. Catching schema drift here keeps the migrations
 and the ORM in lockstep without relying on a human to re-run autogenerate.
+
+Phase 2 adds ``consensus_estimates`` and ``comparisons``; both are picked
+up by the ``expected <= actual`` assertion since they are part of the
+declarative metadata now.
 """
 
 from __future__ import annotations
@@ -53,7 +57,7 @@ def _alembic_config() -> Config:
     return cfg
 
 
-def test_alembic_upgrade_creates_phase1_tables(clean_database: None) -> None:
+def test_alembic_upgrade_creates_all_tables(clean_database: None) -> None:
     command.upgrade(_alembic_config(), "head")
 
     engine = create_engine(_sync_url(), future=True)
@@ -73,10 +77,23 @@ def test_alembic_upgrade_creates_phase1_tables(clean_database: None) -> None:
         "status",
         "processed_at",
     } <= columns
+
+    # Phase 2 columns land on the new tables.
+    consensus_cols = {col["name"] for col in inspector.get_columns("consensus_estimates")}
+    assert {"ticker", "fiscal_year", "fiscal_period", "metric", "value", "source"} <= consensus_cols
+    comparison_cols = {col["name"] for col in inspector.get_columns("comparisons")}
+    assert {
+        "filing_accession",
+        "metric",
+        "reported_value",
+        "consensus_value",
+        "surprise_pct",
+        "direction",
+    } <= comparison_cols
     engine.dispose()
 
 
-def test_alembic_downgrade_removes_all_phase1_tables(clean_database: None) -> None:
+def test_alembic_downgrade_removes_all_tables(clean_database: None) -> None:
     cfg = _alembic_config()
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "base")

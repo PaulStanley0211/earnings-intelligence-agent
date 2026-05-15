@@ -11,6 +11,10 @@ license = { text = "Proprietary" }
 # orchestration skeleton, and a tenacity-driven retry surface for the EDGAR
 # client. The XBRL track uses the pre-parsed companyfacts JSON for now; arelle
 # is deferred to Phase 2's raw-XBRL fallback (per the runbook).
+#
+# Phase 2 adds the consensus fetcher (Finnhub primary, yfinance fallback), the
+# comparator, the first synthesiser/critic pair, and pulls in yfinance as the
+# fallback when Finnhub rate-limits or 4xxs.
 dependencies = [
     "anthropic>=0.39.0",
     "pydantic>=2.7",
@@ -27,6 +31,7 @@ dependencies = [
     "httpx>=0.27",
     "tenacity>=9.0",
     "langgraph>=0.2.50",
+    "yfinance>=0.2.40",
 ]
 
 [project.optional-dependencies]

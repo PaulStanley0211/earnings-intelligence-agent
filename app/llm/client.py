@@ -11,14 +11,18 @@ against cassettes by default and so are fully offline and deterministic. Set
 the environment variable ``REC=1`` to re-record cassettes from a live API
 during a test run.
 
-The cost guard is a simple per-day in-memory counter that aborts further LLM
-calls once :attr:`Settings.max_daily_llm_cost_usd` is reached. Persisting the
-counter to Postgres so it survives process restarts lands in Phase 1 alongside
-the rest of the data layer.
+The cost guard tracks daily spend in two places: an in-process counter for
+sync :meth:`LLMClient.complete` calls (test fixtures, low-stakes one-shots),
+and the Postgres-backed ``daily_llm_spend`` table read through
+:class:`~app.memory.repository.Repository` for async
+:meth:`LLMClient.acomplete` calls from agent nodes. The async path is what
+production uses - it survives restarts and is consistent across the web,
+worker, and watcher processes.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -26,8 +30,9 @@ import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from anthropic import Anthropic
 from anthropic.types import MessageParam
@@ -139,6 +144,17 @@ class _DailyCostTracker:
         with self._lock:
             self._roll_day_if_needed()
             return self._spent_usd
+
+
+class _SupportsDailySpend(Protocol):
+    """Subset of :class:`~app.memory.repository.Repository` the LLM cost cap needs.
+
+    The async path uses Postgres so the cap is shared across processes; the
+    Protocol lets tests inject a stub without spinning up a real database.
+    """
+
+    async def get_daily_spend(self, day: date) -> Decimal: ...
+    async def add_daily_spend(self, *, day: date, amount_usd: Decimal) -> Decimal: ...
 
 
 def _hash_call(
@@ -284,6 +300,101 @@ class LLMClient:
     def spent_today_usd(self) -> float:
         """Return USD spent today by this process across all calls."""
         return self._cost_tracker.spent_today
+
+    async def acomplete(
+        self,
+        *,
+        prompt_version: str,
+        messages: list[dict[str, Any]],
+        repository: _SupportsDailySpend,
+        model: str = "claude-opus-4-7",
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+        system: str | None = None,
+    ) -> LLMResponse:
+        """Async completion that gates on the Postgres-backed daily spend.
+
+        The pre-flight check reads ``daily_llm_spend`` rather than the
+        in-process counter so the cap is shared across web/worker/watcher
+        processes and survives restarts. The actual Anthropic call runs in a
+        worker thread because the SDK is sync; the in-process counter is
+        kept consistent so legacy :meth:`complete` callers still see a
+        unified ``spent_today`` reading.
+        """
+        key = _hash_call(
+            prompt_version=prompt_version,
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            system=system,
+        )
+
+        cassette = self._load_cassette(key)
+        recording = os.environ.get("REC") == "1"
+        if cassette is not None and not recording:
+            return self._response_from_cassette(cassette, key)
+
+        if self._settings.environment.value == "test" and not recording:
+            raise CassetteMiss(
+                f"No cassette for key {key} under {self._cassette_dir}. "
+                "Run with REC=1 to record."
+            )
+
+        in_price, out_price = _model_pricing(model)
+        worst_case_cost = (max_tokens / 1000.0) * out_price
+        today = datetime.now(UTC).date()
+        already_spent = float(await repository.get_daily_spend(today))
+        if already_spent + worst_case_cost > self._settings.max_daily_llm_cost_usd:
+            raise CostCapExceeded(
+                f"LLM daily cap of ${self._settings.max_daily_llm_cost_usd:.2f} "
+                f"would be exceeded by a call costing up to "
+                f"${worst_case_cost:.4f} on top of ${already_spent:.4f} "
+                "already spent today."
+            )
+
+        api_response = await asyncio.to_thread(
+            self._client.messages.create,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            system=system or "",
+            messages=cast("list[MessageParam]", messages),
+        )
+        text = _extract_text(api_response)
+        input_tokens = int(api_response.usage.input_tokens)
+        output_tokens = int(api_response.usage.output_tokens)
+        cost_usd = (
+            (input_tokens / 1000.0) * in_price + (output_tokens / 1000.0) * out_price
+        )
+        await repository.add_daily_spend(
+            day=today, amount_usd=Decimal(f"{cost_usd:.6f}")
+        )
+        # Keep the in-process counter consistent for observability surfaces
+        # that still consult ``spent_today_usd``.
+        self._cost_tracker.record(cost_usd)
+
+        response = LLMResponse(
+            text=text,
+            model=model,
+            prompt_version=prompt_version,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+            cached=False,
+            cassette_key=key,
+        )
+        if recording or self._settings.environment.value == "test":
+            self._save_cassette(key, response)
+        _logger.bind(
+            prompt_version=prompt_version,
+            model=model,
+            cost_usd=cost_usd,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            trace_id=current_trace_id(),
+        ).info("llm_call_async")
+        return response
 
     # ---- cassette I/O ----
 
