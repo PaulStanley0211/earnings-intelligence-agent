@@ -36,7 +36,6 @@ def _stub_openai(vectors: list[list[float]]) -> MagicMock:
     client = MagicMock()
     response = MagicMock()
     response.data = [MagicMock(embedding=v) for v in vectors]
-    response.usage = MagicMock(total_tokens=sum(max(1, len(str(v))) for v in vectors))
     client.embeddings.create.return_value = response
     return client
 
@@ -113,5 +112,5 @@ def test_aembed_raises_when_projected_cost_exceeds_cap(
     )
     with pytest.raises(DailyCostCapExceeded):
         asyncio.run(
-            client.aembed(["x" * 10000 for _ in range(50)])  # large projected cost
+            client.aembed(["x" * 100_000 for _ in range(100)])  # large projected cost
         )

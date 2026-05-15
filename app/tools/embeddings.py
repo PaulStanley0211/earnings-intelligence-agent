@@ -39,9 +39,12 @@ from app.observability.logging import current_trace_id, get_logger
 
 _logger = get_logger()
 
-_USD_PER_1K_TOKENS: Final[dict[str, float]] = {
-    "text-embedding-3-small": 0.02 / 1000.0,
-    "text-embedding-3-large": 0.13 / 1000.0,
+# OpenAI publishes embedding pricing as USD per million tokens. Stored
+# values are the per-token rate so ``_estimate_cost`` is a straight
+# multiplication.
+_USD_PER_TOKEN: Final[dict[str, float]] = {
+    "text-embedding-3-small": 0.02 / 1_000_000.0,
+    "text-embedding-3-large": 0.13 / 1_000_000.0,
 }
 
 _DEFAULT_BATCH_SIZE: Final[int] = 100
@@ -170,8 +173,8 @@ class EmbeddingsClient:
 
     def _estimate_cost(self, texts: Sequence[str]) -> float:
         """Estimated USD cost for embedding ``texts`` at the current model."""
-        per_token = _USD_PER_1K_TOKENS.get(
-            self._model, _USD_PER_1K_TOKENS["text-embedding-3-large"]
+        per_token = _USD_PER_TOKEN.get(
+            self._model, _USD_PER_TOKEN["text-embedding-3-large"]
         )
         return self._estimate_tokens(texts) * per_token
 
