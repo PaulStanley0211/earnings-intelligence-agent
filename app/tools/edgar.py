@@ -315,6 +315,8 @@ class EdgarClient:
         The archives host is ``www.sec.gov`` rather than the JSON ``data.sec.gov``,
         so we override the per-request base URL. CIK is unpadded; accession
         number has dashes stripped per the archives URL convention.
+
+        Raises ``ValueError`` when ``cik`` is non-numeric.
         """
         unpadded_cik = str(int(cik))
         accession_no_dashes = accession_number.replace("-", "")
