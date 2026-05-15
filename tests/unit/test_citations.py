@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from app.agents.citations import build_comparison_citations, build_fact_citations
+from app.agents.citations import (
+    build_comparison_citations,
+    build_fact_citations,
+    build_language_citations,
+)
 
 
 def test_build_fact_citations_orders_concept_then_period_desc() -> None:
@@ -71,3 +75,32 @@ def test_build_comparison_citations_preserves_input_order() -> None:
     assert citations[0].metric == "revenue"
     assert citations[0].consensus_value == Decimal("61000000000")
     assert citations[1].consensus_value is None
+
+
+def test_build_language_citations_indexes_added_modified_and_removed() -> None:
+    payload = [
+        {
+            "section": "mda",
+            "diffs": [
+                {"change_type": "added", "text": "New paragraph one.", "severity": "major"},
+                {
+                    "change_type": "modified",
+                    "current_text": "Updated paragraph.",
+                    "prior_text": "Old paragraph.",
+                    "similarity": "0.7421",
+                    "severity": "major",
+                },
+                {"change_type": "removed", "text": "Removed paragraph.", "severity": "minor"},
+            ],
+        },
+    ]
+    citations = build_language_citations(payload)
+    assert [c.identifier for c in citations] == ["L1", "L2", "L3"]
+    assert citations[0].text == "New paragraph one."
+    assert citations[1].text == "Updated paragraph."
+    assert citations[2].text == "Removed paragraph."
+
+
+def test_build_language_citations_empty_for_missing_payload() -> None:
+    assert build_language_citations(None) == []
+    assert build_language_citations([]) == []

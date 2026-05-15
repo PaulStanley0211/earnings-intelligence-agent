@@ -13,6 +13,8 @@ Identifier conventions:
 * ``C<n>`` - per-metric reported-vs-consensus comparison row from the
   comparator, numbered in iteration order of
   :attr:`AgentState.comparisons` ``metrics``.
+* ``L<n>`` - language-diff entry from the language differ's per-section
+  summaries, numbered in iteration order across sections.
 """
 
 from __future__ import annotations
@@ -109,6 +111,59 @@ def build_comparison_citations(
             )
         )
     return citations
+
+
+@dataclass(frozen=True)
+class LanguageCitation:
+    """One numbered language-diff entry the critic can resolve by id."""
+
+    identifier: str
+    section: str
+    change_type: str
+    text: str
+    severity: str
+
+
+def build_language_citations(
+    language_diffs: list[dict[str, Any]] | None,
+) -> list[LanguageCitation]:
+    """Numbered language citations from the differ's per-section summaries.
+
+    Identifiers are assigned ``L1``, ``L2``, ... in iteration order across
+    sections. For ``modified`` diffs the indexed text is ``current_text``
+    (the new wording); for ``removed`` diffs it is ``prior_text``; for
+    ``added`` diffs it is ``text``.
+    """
+    payloads = language_diffs or []
+    citations: list[LanguageCitation] = []
+    idx = 1
+    for section_payload in payloads:
+        section = str(section_payload.get("section") or "")
+        for diff in section_payload.get("diffs") or []:
+            change_type = str(diff.get("change_type") or "")
+            text = _language_cite_text(change_type, diff)
+            if not text:
+                continue
+            citations.append(
+                LanguageCitation(
+                    identifier=f"L{idx}",
+                    section=section,
+                    change_type=change_type,
+                    text=text,
+                    severity=str(diff.get("severity") or ""),
+                )
+            )
+            idx += 1
+    return citations
+
+
+def _language_cite_text(change_type: str, diff: dict[str, Any]) -> str:
+    """Pick the text the citation should resolve against."""
+    if change_type == "modified":
+        return str(diff.get("current_text") or "")
+    if change_type == "removed":
+        return str(diff.get("prior_text") or diff.get("text") or "")
+    return str(diff.get("text") or "")
 
 
 def _safe_decimal(value: Any) -> Decimal | None:
