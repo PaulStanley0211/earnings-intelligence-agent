@@ -235,12 +235,6 @@ async def _process_section(
     """Embed paragraphs, load prior, align, persist diffs; return summary dict."""
     try:
         vectors = await embeddings.aembed([p.text for p in paragraph_records])
-        await repository.update_section_embeddings(
-            updates=[
-                (record.id, vec, embeddings.model)
-                for record, vec in zip(paragraph_records, vectors, strict=True)
-            ]
-        )
     except Exception as exc:
         _logger.bind(
             accession=filing.accession_number,
@@ -248,6 +242,12 @@ async def _process_section(
             trace_id=current_trace_id(),
         ).warning("language_differ_embed_failed", extra={"error": str(exc)})
         return _degraded_payload(section.kind.value)
+    await repository.update_section_embeddings(
+        updates=[
+            (record.id, vec, embeddings.model)
+            for record, vec in zip(paragraph_records, vectors, strict=True)
+        ]
+    )
 
     kind = SectionKind(section.kind.value)
     prior = await repository.get_prior_quarter_sections(
@@ -437,7 +437,14 @@ def _degraded_payload(section: str) -> dict[str, Any]:
 
 
 def _empty_update(filing: Any, *, reason: str) -> StateUpdate:
-    """Emit an empty StateUpdate when the differ short-circuits."""
+    """Emit a StateUpdate marking the differ as degraded at the filing level.
+
+    Called when the differ short-circuits before any sections are identified
+    (missing primary_document, fetch failure, no sections parsed). The
+    synthesiser and critic treat ``section: None`` + ``degraded: True`` as
+    "no language data this quarter" and omit the language-changes section of
+    the note entirely.
+    """
     _logger.bind(
         accession=filing.accession_number,
         reason=reason,
@@ -445,5 +452,17 @@ def _empty_update(filing: Any, *, reason: str) -> StateUpdate:
     ).info("language_differ_short_circuit")
     return StateUpdate(
         owner=OWNER,
-        changes={"language_diffs": []},
+        changes={
+            "language_diffs": [
+                {
+                    "section": None,
+                    "prior_filing_accession": None,
+                    "diff_count": 0,
+                    "major_count": 0,
+                    "diffs": [],
+                    "degraded": True,
+                    "reason": reason,
+                }
+            ],
+        },
     )
