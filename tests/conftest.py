@@ -23,6 +23,7 @@ import pytest
 _DEFAULT_TEST_ENV: dict[str, str] = {
     "ANTHROPIC_API_KEY": "sk-ant-test-placeholder-key-not-real-do-not-call",
     "FINNHUB_API_KEY": "finnhub-test-placeholder",
+    "OPENAI_API_KEY": "sk-openai-test-placeholder-key-not-real-do-not-call",
     # Host port 5434 matches docker-compose.yml. CI overrides this with port
     # 5432 because its Postgres service is a sibling container, not docker-compose.
     "DATABASE_URL": "postgresql+psycopg://earnings:earnings@localhost:5434/earnings_test",

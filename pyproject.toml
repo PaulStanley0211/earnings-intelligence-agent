@@ -15,6 +15,10 @@ license = { text = "Proprietary" }
 # Phase 2 adds the consensus fetcher (Finnhub primary, yfinance fallback), the
 # comparator, the first synthesiser/critic pair, and pulls in yfinance as the
 # fallback when Finnhub rate-limits or 4xxs.
+#
+# Phase 3 adds the language-differ specialist: HTML section parsing via
+# beautifulsoup4/lxml, OpenAI text-embedding-3-small for paragraph alignment,
+# and pgvector for ANN search in Postgres.
 dependencies = [
     "anthropic>=0.39.0",
     "pydantic>=2.7",
@@ -32,6 +36,10 @@ dependencies = [
     "tenacity>=9.0",
     "langgraph>=0.2.50",
     "yfinance>=0.2.40",
+    "openai>=1.40",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.2",
+    "pgvector>=0.3",
 ]
 
 [project.optional-dependencies]
@@ -107,6 +115,10 @@ disallow_incomplete_defs = false
 
 [[tool.mypy.overrides]]
 module = ["arelle.*", "rq.*", "finnhub.*", "yfinance.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["bs4.*", "lxml.*"]
 ignore_missing_imports = true
 
 # -----------------------------------------------------------------------------

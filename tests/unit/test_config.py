@@ -55,3 +55,34 @@ def test_api_keys_parsed_into_frozenset(
     reset_settings_cache()
     keys = Settings().api_key_set  # type: ignore[call-arg]
     assert keys == frozenset({"k1", "k2", "k3"})
+
+
+def test_settings_accept_openai_and_embeddings_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("FINNHUB_API_KEY", "fh-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://e:e@localhost:5434/e")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("EDGAR_USER_AGENT", "Tester tester@example.com")
+    monkeypatch.setenv("MAX_DAILY_LLM_COST_USD", "10.0")
+    monkeypatch.setenv("EMBEDDINGS_MODEL", "text-embedding-3-small")
+    from app.config import Settings, reset_settings_cache
+    reset_settings_cache()
+    s = Settings()  # type: ignore[call-arg]
+    assert s.openai_api_key.get_secret_value() == "sk-openai-test"
+    assert s.embeddings_model == "text-embedding-3-small"
+
+
+def test_settings_default_embeddings_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("FINNHUB_API_KEY", "fh-test")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://e:e@localhost:5434/e")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("EDGAR_USER_AGENT", "Tester tester@example.com")
+    monkeypatch.setenv("MAX_DAILY_LLM_COST_USD", "10.0")
+    monkeypatch.delenv("EMBEDDINGS_MODEL", raising=False)
+    from app.config import Settings, reset_settings_cache
+    reset_settings_cache()
+    s = Settings()  # type: ignore[call-arg]
+    assert s.embeddings_model == "text-embedding-3-small"
