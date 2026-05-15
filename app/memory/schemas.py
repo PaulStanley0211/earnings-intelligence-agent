@@ -68,6 +68,7 @@ class FilingRecord(BaseModel):
     form: FilingForm
     filed_at: datetime
     source_url: str
+    primary_document: str | None = None
     report_period_end: date | None
     status: FilingStatus
     processed_at: datetime | None

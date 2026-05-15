@@ -478,6 +478,21 @@ class Repository:
         result = await self._session.execute(stmt)
         return [FilingSectionRecord.model_validate(row) for row in result.scalars().all()]
 
+    async def get_filing_sections(
+        self, *, accession_number: str, section_kind: SectionKind
+    ) -> Sequence[FilingSectionRecord]:
+        """Return paragraphs for one filing's section, ordered by paragraph_index."""
+        stmt = (
+            select(FilingSection)
+            .where(FilingSection.filing_accession == accession_number)
+            .where(FilingSection.section_kind == section_kind.value)
+            .order_by(FilingSection.paragraph_index)
+        )
+        result = await self._session.execute(stmt)
+        return [
+            FilingSectionRecord.model_validate(row) for row in result.scalars().all()
+        ]
+
     # ---- language diffs ----
 
     async def insert_language_diffs(
