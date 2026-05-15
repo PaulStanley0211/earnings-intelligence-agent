@@ -24,18 +24,22 @@ from app.observability.tracing import configure_tracing
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Configure observability on startup; no teardown actions yet.
-
-    The ``yield`` separates startup from shutdown; Phase 1 will close DB and
-    Redis pools in the shutdown half of this function.
-    """
+    """Configure observability on startup; close DB + Redis pools on shutdown."""
     settings = get_settings()
     configure_logging(level=settings.log_level)
     configure_tracing(environment=settings.environment.value)
     get_logger().bind(version=__version__, environment=settings.environment.value).info(
         "app_startup"
     )
-    yield
+    try:
+        yield
+    finally:
+        from app.memory.db import dispose_engine
+        from app.memory.redis_client import dispose_redis
+
+        await dispose_engine()
+        await dispose_redis()
+        get_logger().info("app_shutdown")
 
 
 def create_app() -> FastAPI:

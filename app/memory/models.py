@@ -1,0 +1,199 @@
+"""SQLAlchemy ORM declarations for the Phase 1 memory layer.
+
+The memory layer owns every interaction with Postgres. Agent code talks to
+the :class:`~app.memory.repository.Repository` and never imports these models
+directly - this keeps the project-rule "no raw SQL in agent code" verifiable
+by inspecting imports.
+
+Phase 1 covers five tables:
+
+- ``filings``: one row per detected SEC filing on the watchlist.
+- ``financial_facts``: numbers extracted from a filing's XBRL companyfacts.
+- ``watchlist``: tickers the watcher polls.
+- ``edgar_poll_log``: one row per poll cycle for the ``/health`` last-poll check.
+- ``daily_llm_spend``: Postgres-backed daily LLM cost cap (in-memory in Phase 0).
+
+pgvector and the language-diff tables land in Phase 3 next to that work.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Declarative base for every ORM model in the memory layer."""
+
+
+class Filing(Base):
+    """An SEC filing the watcher has detected.
+
+    Status is a state machine: ``detected -> processing -> processed`` on the
+    happy path, with ``failed`` as the terminal error state. The ``status``
+    column is also the only mutable column on this row - the rest are append-
+    only per the project rule on memory.
+    """
+
+    __tablename__ = "filings"
+
+    accession_number: Mapped[str] = mapped_column(String(32), primary_key=True)
+    cik: Mapped[str] = mapped_column(String(10), nullable=False)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    form: Mapped[str] = mapped_column(String(8), nullable=False)
+    filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    report_period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="detected")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    facts: Mapped[list[FinancialFact]] = relationship(
+        back_populates="filing", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "form IN ('10-K', '10-Q', '8-K')", name="filings_form_supported"
+        ),
+        CheckConstraint(
+            "status IN ('detected', 'processing', 'processed', 'failed')",
+            name="filings_status_valid",
+        ),
+        Index("ix_filings_cik_filed_at", "cik", "filed_at"),
+        Index("ix_filings_ticker_filed_at", "ticker", "filed_at"),
+    )
+
+
+class FinancialFact(Base):
+    """A single XBRL fact attached to a filing.
+
+    One row per (concept, period, unit) so a filing typically owns dozens of
+    rows. Deduped at insert time by a composite unique constraint - the
+    repository uses ``ON CONFLICT DO NOTHING`` for idempotent loads.
+    """
+
+    __tablename__ = "financial_facts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    cik: Mapped[str] = mapped_column(String(10), nullable=False)
+    taxonomy: Mapped[str] = mapped_column(String(32), nullable=False)
+    concept: Mapped[str] = mapped_column(String(128), nullable=False)
+    unit: Mapped[str] = mapped_column(String(32), nullable=False)
+    value: Mapped[Decimal] = mapped_column(Numeric(28, 6), nullable=False)
+    period_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    fiscal_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    fiscal_period: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    form: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    filed: Mapped[date | None] = mapped_column(Date, nullable=True)
+    frame: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    filing: Mapped[Filing] = relationship(back_populates="facts")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "filing_accession",
+            "concept",
+            "period_end",
+            "period_start",
+            "unit",
+            name="uq_financial_facts_filing_concept_period_unit",
+        ),
+        CheckConstraint(
+            "period_type IN ('instant', 'duration')",
+            name="financial_facts_period_type_valid",
+        ),
+        Index("ix_financial_facts_cik_concept", "cik", "concept"),
+    )
+
+
+class WatchlistEntry(Base):
+    """A ticker the EDGAR watcher polls.
+
+    The repository upserts by ticker, so updating company metadata or toggling
+    the ``active`` flag is a single call. Phase 1 seeds five tickers; phase 6
+    gives the dashboard a UI to manage them.
+    """
+
+    __tablename__ = "watchlist"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    cik: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class EdgarPollLog(Base):
+    """One row per EDGAR poll cycle.
+
+    The ``/health`` endpoint reads the most recent ``ok`` row to assert the
+    watcher polled within the SLA window (5 minutes by default).
+    """
+
+    __tablename__ = "edgar_poll_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    polled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    tickers_checked: Mapped[int] = mapped_column(Integer, nullable=False)
+    filings_found: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(8), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("status IN ('ok', 'error')", name="edgar_poll_log_status_valid"),
+        Index("ix_edgar_poll_log_polled_at", "polled_at"),
+    )
+
+
+class DailyLLMSpend(Base):
+    """Postgres-backed counter for the daily LLM cost cap.
+
+    Phase 0 enforced the cap in-process. Phase 1 lifts the counter into the
+    database so the web, worker, and watcher processes share a single budget
+    and the cap survives restarts.
+    """
+
+    __tablename__ = "daily_llm_spend"
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    spent_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6), nullable=False, default=Decimal("0")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

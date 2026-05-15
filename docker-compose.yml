@@ -8,8 +8,14 @@ services:
       POSTGRES_USER: earnings
       POSTGRES_PASSWORD: earnings
       POSTGRES_DB: earnings
+    # Host port 5434 avoids conflicting with a Windows-side Postgres install
+    # on 5432 and other dev containers commonly on 5433. The internal port
+    # stays 5432, so the app container's DATABASE_URL
+    # (postgresql+psycopg://earnings:earnings@db:5432/earnings) is unchanged
+    # and CI's services job (which talks to Postgres directly without compose)
+    # also keeps its 5432 mapping.
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

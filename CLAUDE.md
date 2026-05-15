@@ -4,7 +4,39 @@ Autonomous multi-agent system that produces a fact-checked equity research note 
 
 ## Status
 
-In development. Seven-phase build. See [`PLAN.md`](PLAN.md) — the source of truth for scope, architecture, and acceptance criteria.
+Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acceptance criteria.
+
+**Phase 0 — project bootstrap: complete** (commit `0c228e9`, 2026-05-15).
+
+**Phase 1 — Foundation: complete** (branch `phase-1-foundation`, 2026-05-15).
+
+In place from Phase 0:
+- uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
+- Multi-stage [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) (Postgres + pgvector on host port 5434 to avoid Windows host-Postgres collisions, Redis, FastAPI).
+- Fail-fast Pydantic settings in [`app/config.py`](app/config.py) — every required env var validated at startup, including EDGAR User-Agent format.
+- LLM client at [`app/llm/client.py`](app/llm/client.py) with SHA-keyed cassette replay and daily cost cap that fails closed (in-process; Postgres-backed counter now exists for Phase 2 to adopt).
+- `AgentState` contract with per-node `StateUpdate` field ownership in [`app/models/state.py`](app/models/state.py).
+- Loguru JSON logging with trace-id propagation and secret scrubbing; OpenTelemetry tracing scaffolding in [`app/observability/`](app/observability/).
+- GitHub Actions CI: ruff, mypy, unit, integration (services), pip-audit, plus a nightly eval workflow.
+- Solo review prompt and ops playbook stubs: [`docs/review-prompt.md`](docs/review-prompt.md), [`docs/runbook.md`](docs/runbook.md).
+
+Added in Phase 1:
+- **Memory layer** ([`app/memory/`](app/memory/)). SQLAlchemy 2.x async ORM models for `filings`, `financial_facts`, `watchlist`, `edgar_poll_log`, `daily_llm_spend` ([`models.py`](app/memory/models.py)); detached Pydantic DTOs ([`schemas.py`](app/memory/schemas.py)); async engine + session factory ([`db.py`](app/memory/db.py)); a single :class:`Repository` ([`repository.py`](app/memory/repository.py)) — all DB access goes through it; Redis async wrapper ([`redis_client.py`](app/memory/redis_client.py)).
+- **First Alembic migration** at [`migrations/versions/20260515_1933_0001_phase1_schema.py`](migrations/versions/20260515_1933_0001_phase1_schema.py) — hand-written, hand-reviewable. `migrations/env.py` now binds `target_metadata = Base.metadata`.
+- **EDGAR client** at [`app/tools/edgar.py`](app/tools/edgar.py) — async httpx, token-bucket rate limit (≤10 rps), tenacity exponential backoff on 5xx and network errors, contact-email User-Agent validated at construction, typed responses (`SubmissionsResponse`, `CompanyFactsResponse`, `RecentFiling`).
+- **XBRL track via companyfacts JSON** at [`app/tools/companyfacts.py`](app/tools/companyfacts.py). The `arelle` raw-XBRL fallback in [`docs/runbook.md`](docs/runbook.md) is deferred to Phase 2.
+- **First agent node**: `financial_extractor` at [`app/agents/financial_extractor.py`](app/agents/financial_extractor.py), a pure function of `AgentState` returning a typed `StateUpdate`.
+- **EDGAR watcher** at [`app/agents/watcher.py`](app/agents/watcher.py): `poll_once(...)` for one-shot use, `watch_forever(...)` for the production service. Idempotent (filings checkpointed by accession), records every cycle to `edgar_poll_log`.
+- **LangGraph skeleton** at [`app/graph.py`](app/graph.py) — `START -> financial_extractor -> END`. Compiled and invoked end-to-end in tests/integration.
+- **CLI**: `uv run python -m app.scripts.poll_once [--ticker T --cik C --company-name N]` ([`app/scripts/poll_once.py`](app/scripts/poll_once.py)).
+- **`/health` upgraded** ([`app/api/health.py`](app/api/health.py)): real Postgres `SELECT 1`, Redis ping, and a 5-minute freshness check on the most recent EDGAR poll. DB outage → HTTP 503; Redis or stale watcher → 200 with `status: degraded`.
+
+Gate evidence at Phase 1 close: ruff clean, mypy clean (28 source files), 62 tests green (44 unit + 18 integration), `coverage report` line coverage 85.22%.
+
+Empty stubs still awaiting later phases — do not assume contents exist:
+`app/delivery/`, `prompts/`, `evals/`, `tests/fixtures/cassettes/`.
+
+**Next: Phase 2 — Numbers track.** Financial extractor extensions, consensus fetcher (Finnhub primary, yfinance fallback), comparator, minimal synthesizer, critic v0. Done when the system auto-generates a numbers-only note with zero unverified numbers.
 
 ## Tech stack
 
@@ -50,8 +82,12 @@ uv run mypy app/
 # Migrations
 uv run alembic upgrade head
 
-# One-shot EDGAR poll (debug)
-uv run python -m app.scripts.poll_once --ticker NVDA
+# One-shot EDGAR poll (debug) - uses the persisted watchlist
+uv run python -m app.scripts.poll_once
+
+# Same, but seed/refresh a ticker first (idempotent)
+uv run python -m app.scripts.poll_once \
+    --ticker NVDA --cik 1045810 --company-name "NVIDIA Corp"
 ```
 
 ## Conventions

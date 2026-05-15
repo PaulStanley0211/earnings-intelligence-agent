@@ -7,9 +7,10 @@ requires-python = ">=3.11"
 authors = [{ name = "Paul Stanley Ganganapalli", email = "paulstanleyganganapalli@gmail.com" }]
 license = { text = "Proprietary" }
 
-# Phase 0 keeps the dependency surface minimal: only what the bootstrap modules
-# (config, llm client, observability, state model, /health stub, alembic) need
-# to import and to run. Phase 1 will expand this surface (EDGAR, XBRL, LangGraph).
+# Phase 1 adds EDGAR ingestion, the Postgres-backed memory layer, the LangGraph
+# orchestration skeleton, and a tenacity-driven retry surface for the EDGAR
+# client. The XBRL track uses the pre-parsed companyfacts JSON for now; arelle
+# is deferred to Phase 2's raw-XBRL fallback (per the runbook).
 dependencies = [
     "anthropic>=0.39.0",
     "pydantic>=2.7",
@@ -24,6 +25,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=5.0",
     "httpx>=0.27",
+    "tenacity>=9.0",
+    "langgraph>=0.2.50",
 ]
 
 [project.optional-dependencies]
@@ -127,4 +130,10 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+]
+
+[dependency-groups]
+dev = [
+    "coverage>=7.14.0",
+    "pytest-cov>=7.1.0",
 ]

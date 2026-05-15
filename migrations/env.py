@@ -24,10 +24,13 @@ if config.config_file_name is not None:
 # Inject the live DATABASE_URL so we never check a credential into alembic.ini.
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-# target_metadata will be set in Phase 1 when we introduce SQLAlchemy ORM
-# models for the filings/financials/notes tables. Migrations until then are
-# written by hand.
-target_metadata = None
+# Phase 1: bind to the project's declarative metadata so ``alembic revision
+# --autogenerate`` can diff against the ORM. The import sits below the
+# config wiring so missing env vars surface a Settings error before alembic
+# tries to introspect anything.
+from app.memory.models import Base  # noqa: E402
+
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
