@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly eval at 06:00 UTC.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: earnings
+          POSTGRES_PASSWORD: earnings
+          POSTGRES_DB: earnings
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U earnings -d earnings"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      ANTHROPIC_API_KEY: sk-ant-test-placeholder-key-not-real-do-not-call
+      FINNHUB_API_KEY: finnhub-test-placeholder
+      DATABASE_URL: postgresql+psycopg://earnings:earnings@localhost:5432/earnings
+      REDIS_URL: redis://localhost:6379/0
+      EDGAR_USER_AGENT: CI Runner ci@example.com
+      MAX_DAILY_LLM_COST_USD: "10.0"
+      LOG_LEVEL: INFO
+      ENVIRONMENT: test
+      LLM_CACHE_DIR: ./llm_cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.4.27"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff lint
+        run: uv run ruff check app/ tests/
+
+      - name: Mypy type-check
+        run: uv run mypy app/
+
+      - name: Unit tests
+        run: uv run pytest tests/unit -q
+
+      - name: Integration tests
+        run: uv run pytest tests/integration -q
+        if: hashFiles('tests/integration/**/*.py') != ''
+
+      - name: pip-audit (vulnerability scan)
+        run: uv run pip-audit --strict
+        continue-on-error: true
+
+  nightly-eval:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      - name: Run system eval
+        run: |
+          uv sync --frozen --extra dev
+          uv run python -m evals.run

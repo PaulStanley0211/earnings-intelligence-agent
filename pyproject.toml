@@ -1,0 +1,130 @@
+[project]
+name = "earnings-intelligence-agent"
+version = "0.1.0"
+description = "Autonomous multi-agent system that produces a fact-checked equity research note within minutes of an SEC earnings filing."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Paul Stanley Ganganapalli", email = "paulstanleyganganapalli@gmail.com" }]
+license = { text = "Proprietary" }
+
+# Phase 0 keeps the dependency surface minimal: only what the bootstrap modules
+# (config, llm client, observability, state model, /health stub, alembic) need
+# to import and to run. Phase 1 will expand this surface (EDGAR, XBRL, LangGraph).
+dependencies = [
+    "anthropic>=0.39.0",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.4",
+    "loguru>=0.7",
+    "opentelemetry-api>=1.25",
+    "opentelemetry-sdk>=1.25",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
+    "redis>=5.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+    "types-redis>=4.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# -----------------------------------------------------------------------------
+# Ruff: lint + format. CLAUDE.md enforces no print, no emoji, no commented code.
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",       # pycodestyle / pyflakes
+    "I",                  # isort
+    "B",                  # bugbear
+    "UP",                 # pyupgrade
+    "SIM",                # simplify
+    "RUF",                # ruff-specific
+    "T20",                # flake8-print: forbids print statements
+    "D",                  # pydocstyle: forces docstrings on public APIs
+    "ANN",                # flake8-annotations: forces type hints
+    "S",                  # flake8-bandit (security)
+]
+ignore = [
+    "D203", "D213",       # conflicting docstring style picks
+    "D100",               # module docstring optional for now
+    "ANN401",             # allow Any in carefully-scoped places
+    "S101",               # assert allowed in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "S"]
+"scripts/**" = ["D", "T20"]
+"migrations/**" = ["D", "ANN"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# -----------------------------------------------------------------------------
+# mypy: strict on app/, relaxed on tests.
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+exclude = ["migrations/versions/", "build/", "dist/"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = ["arelle.*", "rq.*", "finnhub.*", "yfinance.*"]
+ignore_missing_imports = true
+
+# -----------------------------------------------------------------------------
+# pytest + coverage
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+asyncio_mode = "auto"
+markers = [
+    "integration: integration tests requiring Postgres + Redis",
+    "slow: long-running tests excluded from the fast unit suite",
+]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = ["app/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 85
+skip_covered = false
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

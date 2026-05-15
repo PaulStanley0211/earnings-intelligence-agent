@@ -1,0 +1,80 @@
+# Runbook
+
+Operational playbook for the Earnings Intelligence Agent. One row per known
+failure mode from `PLAN.md` section 8, plus anything we have learned in
+production. Keep the table flat and the actions imperative.
+
+## Operational playbook
+
+### EDGAR returns 5xx
+
+- **Symptom:** EDGAR watcher logs `edgar_5xx` repeatedly.
+- **First response:** exponential backoff with jitter, up to 5 retries (automatic).
+- **Escalation:** if all retries fail, the watcher logs `edgar_outage` and an
+  alert fires in Slack. Confirm the outage at <https://www.sec.gov/cgi-bin/browse-edgar>;
+  if confirmed, leave the watcher idle - it will resume on its own once the
+  next poll succeeds.
+
+### Finnhub rate-limit
+
+- **Symptom:** `finnhub_rate_limited` in logs; consensus calls fail.
+- **First response:** the consensus client automatically falls back to yfinance
+  and tags the note with `consensus_source: yfinance`.
+- **Escalation:** if both fail, the comparator returns no `vs_consensus` section
+  and the note carries a `degraded: true` flag.
+
+### Transcript unavailable
+
+- **Symptom:** transcript node logs `transcript_missing`.
+- **First response:** ship a partial note flagged `transcript_pending`; the
+  watcher will reprocess the event when the transcript appears.
+
+### XBRL malformed
+
+- **Symptom:** `xbrl_extraction_failed` for a real filing.
+- **First response:** fall back to LLM-driven extraction with reduced
+  confidence. Note is tagged `extraction_source: llm`.
+
+### LLM timeout
+
+- **Symptom:** `llm_timeout` followed by retry.
+- **First response:** retry once. If the retry still fails, ship a degraded
+  note flagged `llm_partial` and continue.
+
+### Critic loop exceeded
+
+- **Symptom:** graph terminates with `critic_loop_exceeded` after three retries.
+- **First response:** note is held for manual review. Slack alert fires.
+  Inspect the `critic_findings` on the held note - if the critic is wrong,
+  manually approve and file a regression test; if the synthesizer is wrong,
+  add a rubric example and consider a prompt revision.
+
+### Watcher restart
+
+- **Symptom:** the watcher process restarts.
+- **First response:** none required. Processed `accession_number` values are
+  checkpointed in Postgres, so duplicate work is impossible.
+
+### Daily LLM cost cap
+
+- **Symptom:** `CostCapExceeded` raised; no further LLM calls happen today.
+- **First response:** alert fires once daily spend crosses 80% of the cap. If
+  the cap is hit, investigate the trace ids for the noisiest events - a
+  prompt regression or a stuck retry loop is the usual cause.
+
+## Reset procedures
+
+### Replay a single filing
+
+```bash
+uv run python -m app.scripts.poll_once --ticker MSFT --accession <accession>
+```
+
+### Re-record a stale LLM cassette
+
+```bash
+REC=1 uv run pytest tests/integration/test_<scenario>.py
+```
+
+Re-record only when an intentional prompt or contract change makes the
+cassette stale, not to make a flaky test pass.

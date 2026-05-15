@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Environment + secrets
+.env
+.env.local
+.env.*.local
+
+# uv
+.uv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-local
+LLM_CACHE_DIR/
+llm_cache/
+tests/fixtures/cassettes/.replay-cache/
+logs/
+*.log
+
+# Alembic temp
+migrations/versions/__pycache__/
+
+# Docker
+.docker/
+
+# Streamlit
+.streamlit/secrets.toml
