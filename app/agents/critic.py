@@ -25,8 +25,10 @@ from typing import Final
 from app.agents.citations import (
     ComparisonCitation,
     FactCitation,
+    LanguageCitation,
     build_comparison_citations,
     build_fact_citations,
+    build_language_citations,
 )
 from app.models.state import (
     AgentState,
@@ -63,6 +65,11 @@ _UNCITED_NUMBER: Final[re.Pattern[str]] = re.compile(
     r"(?P<value>-?\$\d+(?:,\d{3})*(?:\.\d+)?|"
     r"-?\d+(?:,\d{3})*(?:\.\d+)?\s+(?:billion|million|thousand|bn|mn)|"
     r"-?\d+(?:\.\d+)?\s*%)",
+    re.IGNORECASE,
+)
+
+_CITED_LANGUAGE: Final[re.Pattern[str]] = re.compile(
+    r"\[(?P<cite>L\d+)\]",
     re.IGNORECASE,
 )
 
@@ -110,6 +117,9 @@ def critique_draft(state: AgentState) -> StateUpdate:
     comparison_index = {
         c.identifier: c for c in build_comparison_citations(state.comparisons)
     }
+    language_index = {
+        c.identifier: c for c in build_language_citations(state.language_diffs)
+    }
 
     findings: list[CriticFinding] = []
     cited_spans: list[tuple[int, int]] = []
@@ -119,6 +129,7 @@ def critique_draft(state: AgentState) -> StateUpdate:
         if validated is not None:
             findings.append(validated)
     findings.extend(_find_uncited(state.draft_note, cited_spans))
+    findings.extend(_validate_language_citations(state.draft_note, language_index))
 
     accepted = not any(f.severity == "error" for f in findings)
     _logger.bind(
@@ -346,3 +357,71 @@ def _result(
     else:
         changes["critic_verdict"] = CriticVerdict.REJECTED
     return StateUpdate(owner=OWNER, changes=changes)
+
+
+def _validate_language_citations(
+    text: str,
+    language_index: dict[str, LanguageCitation],
+) -> list[CriticFinding]:
+    """For each ``[L#]`` in ``text``, verify it resolves and the quoted text matches."""
+    findings: list[CriticFinding] = []
+    for line in text.splitlines():
+        for match in _CITED_LANGUAGE.finditer(line):
+            cite_id = match.group("cite").upper()
+            citation = language_index.get(cite_id)
+            if citation is None:
+                findings.append(
+                    CriticFinding(
+                        layer="quote",
+                        severity="error",
+                        message=(
+                            f"citation {cite_id!r} references no known "
+                            "language change"
+                        ),
+                    )
+                )
+                continue
+            quoted_part = _strip_citation_from_line(line, match.span())
+            if not _language_match(quoted_part, citation.text):
+                findings.append(
+                    CriticFinding(
+                        layer="quote",
+                        severity="error",
+                        message=(
+                            f"text near {cite_id!r} does not match the cited "
+                            "language paragraph (substring or 90% char similarity)"
+                        ),
+                    )
+                )
+    return findings
+
+
+def _strip_citation_from_line(line: str, span: tuple[int, int]) -> str:
+    """Remove the citation token and bullet markup so we can compare prose."""
+    start, end = span
+    stripped = (line[:start] + line[end:]).strip()
+    for prefix in ("- ", "* ", "+ "):
+        if stripped.startswith(prefix):
+            stripped = stripped[len(prefix):]
+    return stripped.strip(" .")
+
+
+def _language_match(quoted: str, indexed_text: str) -> bool:
+    """Return True when ``quoted`` is a substring or has >=90% char similarity."""
+    from difflib import SequenceMatcher
+
+    if not quoted:
+        return False
+    q = _normalise(quoted)
+    t = _normalise(indexed_text)
+    if not q or not t:
+        return False
+    if q in t:
+        return True
+    return SequenceMatcher(a=q, b=t).ratio() >= 0.90
+
+
+def _normalise(text: str) -> str:
+    """Collapse whitespace, lowercase, strip trailing punctuation."""
+    collapsed = re.sub(r"\s+", " ", text).strip().lower()
+    return collapsed.strip(" .,;:!?")

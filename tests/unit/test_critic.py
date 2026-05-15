@@ -189,3 +189,101 @@ def test_bare_integers_are_not_flagged_as_uncited(draft: str) -> None:
     state = _state(draft=draft, financials=_financials(), comparisons=_comparisons())
     update = critique_draft(state)
     assert update.changes["critic_verdict"] is CriticVerdict.ACCEPTED
+
+
+def test_critic_accepts_valid_language_citation() -> None:
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="x",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime.now(UTC),
+            source_url="https://www.sec.gov/x",
+        ),
+        language_diffs=[
+            {
+                "section": "mda",
+                "diffs": [
+                    {
+                        "change_type": "modified",
+                        "current_text": (
+                            "Operating expenses rose substantially as we "
+                            "accelerated AI infrastructure investment."
+                        ),
+                        "prior_text": "Operating expenses rose modestly.",
+                        "similarity": "0.7421",
+                        "severity": "major",
+                    },
+                ],
+            }
+        ],
+        draft_note=(
+            "## Headline\n"
+            "MSFT updated guidance.\n"
+            "## Language changes\n"
+            "- Operating expenses rose substantially as we accelerated AI "
+            "infrastructure investment [L1].\n"
+        ),
+    )
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert not any(f.severity == "error" and "L1" in f.message for f in findings)
+
+
+def test_critic_rejects_l_citation_that_does_not_match_indexed_text() -> None:
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="x",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime.now(UTC),
+            source_url="https://www.sec.gov/x",
+        ),
+        language_diffs=[
+            {
+                "section": "mda",
+                "diffs": [
+                    {
+                        "change_type": "added",
+                        "text": "A new geopolitical risk could affect international sales.",
+                        "severity": "major",
+                    },
+                ],
+            }
+        ],
+        draft_note=(
+            "## Language changes\n"
+            "- We are pivoting to a subscription-only business model [L1].\n"
+        ),
+    )
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "L1" in f.message for f in findings)
+
+
+def test_critic_rejects_l_citation_with_no_matching_index() -> None:
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="x",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime.now(UTC),
+            source_url="https://www.sec.gov/x",
+        ),
+        draft_note=(
+            "## Language changes\n"
+            "- A made-up quote [L7].\n"
+        ),
+    )
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "L7" in f.message for f in findings)
