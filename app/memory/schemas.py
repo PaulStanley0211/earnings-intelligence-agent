@@ -220,3 +220,94 @@ class ComparisonRecord(BaseModel):
     surprise_pct: Decimal | None
     direction: ComparisonDirection | None
     created_at: datetime
+
+
+# ---- Phase 3: filing sections and language diffs ----
+
+
+class SectionKind(StrEnum):
+    """Kind of parsed filing section the language differ recognises."""
+
+    MDA = "mda"
+    RISK_FACTORS = "risk_factors"
+
+
+class ChangeType(StrEnum):
+    """Classification of a single language change."""
+
+    ADDED = "added"
+    REMOVED = "removed"
+    MODIFIED = "modified"
+
+
+class Severity(StrEnum):
+    """Severity tier for a persisted language diff."""
+
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class NewFilingSection(BaseModel):
+    """Inputs to :meth:`Repository.insert_filing_sections`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    cik: str
+    ticker: str
+    section_kind: SectionKind
+    paragraph_index: int = Field(..., ge=0)
+    text: str
+    text_sha: str = Field(..., min_length=64, max_length=64)
+    embedding: list[float] | None = None
+    embedding_model: str | None = None
+
+
+class FilingSectionRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.FilingSection` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    cik: str
+    ticker: str
+    section_kind: SectionKind
+    paragraph_index: int
+    text: str
+    text_sha: str
+    embedding: list[float] | None
+    embedding_model: str | None
+    created_at: datetime
+
+
+class NewLanguageDiff(BaseModel):
+    """Inputs to :meth:`Repository.insert_language_diffs`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    prior_filing_accession: str | None = None
+    section_kind: SectionKind
+    change_type: ChangeType
+    current_section_id: int | None = None
+    prior_section_id: int | None = None
+    similarity: Decimal | None = None
+    severity: Severity
+
+
+class LanguageDiffRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.LanguageDiff` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    prior_filing_accession: str | None
+    section_kind: SectionKind
+    change_type: ChangeType
+    current_section_id: int | None
+    prior_section_id: int | None
+    similarity: Decimal | None
+    severity: Severity
+    created_at: datetime
