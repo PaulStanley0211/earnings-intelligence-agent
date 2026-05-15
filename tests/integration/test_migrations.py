@@ -103,3 +103,33 @@ def test_alembic_downgrade_removes_all_tables(clean_database: None) -> None:
     remaining = set(inspector.get_table_names()) - {"alembic_version"}
     assert remaining == set(), f"downgrade left tables behind: {remaining}"
     engine.dispose()
+
+
+def test_phase3_migration_creates_pgvector_and_tables(clean_database: None) -> None:
+    """0003_phase3_schema enables pgvector and adds filing_sections + language_diffs."""
+    command.upgrade(_alembic_config(), "head")
+
+    engine = create_engine(_sync_url(), future=True)
+    with engine.connect() as conn:
+        ext = conn.execute(
+            text("SELECT extname FROM pg_extension WHERE extname = 'vector'")
+        )
+        assert ext.scalar_one_or_none() == "vector"
+
+        cols = conn.execute(
+            text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'filings' AND column_name = 'primary_document'"
+            )
+        )
+        assert cols.scalar_one_or_none() == "primary_document"
+
+        tables = conn.execute(
+            text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_name IN ('filing_sections', 'language_diffs') "
+                "ORDER BY table_name"
+            )
+        )
+        assert [row[0] for row in tables.all()] == ["filing_sections", "language_diffs"]
+    engine.dispose()
