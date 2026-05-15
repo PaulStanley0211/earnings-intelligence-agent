@@ -25,9 +25,11 @@ from app.memory.schemas import (
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
+    NewFilingSection,
     NewFinancialFact,
     NewPollLog,
     PollStatus,
+    SectionKind,
 )
 from app.models.state import FilingForm
 
@@ -472,8 +474,6 @@ async def session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
 async def test_insert_filing_sections_is_idempotent(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    from app.memory.schemas import NewFilingSection, SectionKind
-
     accession = "0000000000-26-000010"
     async with session_factory() as session:
         await Repository(session).record_filing(
@@ -561,8 +561,6 @@ async def test_update_section_embeddings_sets_vector_and_model(
 async def test_get_prior_quarter_sections_returns_most_recent_filing(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    from app.memory.schemas import NewFilingSection, SectionKind
-
     async with session_factory() as session:
         repo = Repository(session)
         for accession, filed in [
@@ -604,3 +602,4 @@ async def test_get_prior_quarter_sections_returns_most_recent_filing(
         )
         assert len(rows) == 1
         assert rows[0].filing_accession == "0000000000-26-000020"
+        assert rows[0].text == "Filed at 2026-01-25."
