@@ -8,7 +8,9 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 0 — project bootstrap: complete** (commit `0c228e9`, 2026-05-15).
 
-**Phase 1 — Foundation: complete** (branch `phase-1-foundation`, 2026-05-15).
+**Phase 1 — Foundation: complete** (commit `ae2a5e2`, PR [#1](https://github.com/PaulStanley0211/earnings-intelligence-agent/pull/1), 2026-05-15).
+
+**Phase 2 — Numbers track: in progress.**
 
 In place from Phase 0:
 - uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
@@ -36,7 +38,7 @@ Gate evidence at Phase 1 close: ruff clean, mypy clean (28 source files), 62 tes
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `prompts/`, `evals/`, `tests/fixtures/cassettes/`.
 
-**Next: Phase 2 — Numbers track.** Financial extractor extensions, consensus fetcher (Finnhub primary, yfinance fallback), comparator, minimal synthesizer, critic v0. Done when the system auto-generates a numbers-only note with zero unverified numbers.
+**Phase 2 scope.** Extend the financial extractor beyond Phase 1's allowlist, add a consensus fetcher (Finnhub primary, yfinance fallback) under `app/tools/`, build a comparator that diffs reported vs consensus, write the first synthesizer (Opus) and critic v0 (deterministic number checks). Migrate the LLM client's daily cost cap from in-process to the `daily_llm_spend` table that Phase 1 already created. Wire the new nodes into [`app/graph.py`](app/graph.py) so the graph becomes `START -> financial_extractor -> comparator -> synthesizer -> critic -> END`. Land the first prompt templates under `prompts/` with frontmatter (model, temperature, body-SHA) and the first LLM cassettes under `tests/fixtures/cassettes/`. Done when the system auto-generates a numbers-only note with zero unverified numbers — every figure in the note must trace to a row in `financial_facts` or to a recorded consensus value, and the critic blocks any draft that fails that check.
 
 ## Tech stack
 
