@@ -1,18 +1,19 @@
-"""The numbers-only synthesiser agent node.
+"""The synthesiser agent node.
 
-Reads :attr:`AgentState.financials` and :attr:`AgentState.comparisons`,
-renders them into the ``synthesizer/numbers_v1`` prompt, calls Claude Opus
-through :class:`~app.llm.client.LLMClient`, and writes the model's response
-to :attr:`AgentState.draft_note`.
+Reads :attr:`AgentState.financials`, :attr:`AgentState.comparisons`, and
+:attr:`AgentState.language_diffs`, renders them into the
+``synthesizer/numbers_with_language_v1`` prompt, calls Claude Opus through
+:class:`~app.llm.client.LLMClient`, and writes the model's response to
+:attr:`AgentState.draft_note`.
 
 The synthesiser is the first node that consumes the database-backed daily
 LLM spend cap: it always routes through :meth:`LLMClient.acomplete` with
 the live :class:`~app.memory.repository.Repository`, so the cap survives
 restarts and is shared across processes.
 
-Phase 2 ships a single prompt version. Future phases swap the version
-string and add A/B comparisons via ``evals/compare.py`` without changing
-this node.
+Phase 3 extends the prompt to include ``[L#]`` language-change citations
+from the differ. Future phases swap the version string and add A/B
+comparisons via ``evals/compare.py`` without changing this node.
 """
 
 from __future__ import annotations
@@ -22,8 +23,10 @@ from typing import Any
 from app.agents.citations import (
     ComparisonCitation,
     FactCitation,
+    LanguageCitation,
     build_comparison_citations,
     build_fact_citations,
+    build_language_citations,
 )
 from app.llm.client import LLMClient, _SupportsDailySpend
 from app.llm.prompts import load_prompt
@@ -34,7 +37,7 @@ _logger = get_logger()
 
 OWNER = "synthesizer"
 
-_PROMPT_NAME = "synthesizer/numbers_v1"
+_PROMPT_NAME = "synthesizer/numbers_with_language_v1"
 _MAX_TOKENS = 1024
 
 
@@ -55,8 +58,10 @@ async def synthesize_note(
     template = load_prompt(_PROMPT_NAME)
     fact_citations = build_fact_citations(state.financials)
     comparison_citations = build_comparison_citations(state.comparisons)
+    language_citations = build_language_citations(state.language_diffs)
     facts_block = _render_facts_block(fact_citations)
     comparisons_block = _render_comparisons_block(comparison_citations)
+    language_block = _render_language_block(language_citations)
     critic_feedback = _render_critic_feedback(state)
 
     user_content = template.render(
@@ -69,6 +74,7 @@ async def synthesize_note(
         period_end=str(_safe_get(state.comparisons, "period_end") or ""),
         facts_block=facts_block,
         comparisons_block=comparisons_block,
+        language_block=language_block,
         critic_feedback=critic_feedback,
     )
 
@@ -86,6 +92,7 @@ async def synthesize_note(
         ticker=state.filing_event.ticker,
         fact_citations=len(fact_citations),
         comparison_citations=len(comparison_citations),
+        language_citations=len(language_citations),
         cost_usd=response.cost_usd,
         prompt_version=response.prompt_version,
         trace_id=current_trace_id(),
@@ -126,6 +133,24 @@ def _render_comparisons_block(citations: list[ComparisonCitation]) -> str:
             f"{c.reported_unit}; consensus {consensus}; surprise {surprise}; "
             f"direction {c.direction or 'n/a'}"
         )
+    return "\n".join(lines)
+
+
+def _render_language_block(citations: list[LanguageCitation]) -> str:
+    """Render language citations as a newline-joined markdown-friendly block."""
+    if not citations:
+        return "(no language changes detected this quarter)"
+    lines: list[str] = []
+    for c in citations:
+        verb = {
+            "added": "ADDED",
+            "removed": "REMOVED",
+            "modified": "MODIFIED",
+        }.get(c.change_type, c.change_type.upper())
+        lines.append(
+            f"[{c.identifier}] section={c.section} change={verb} severity={c.severity}"
+        )
+        lines.append(f"    {c.text}")
     return "\n".join(lines)
 
 

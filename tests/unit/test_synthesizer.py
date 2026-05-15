@@ -16,7 +16,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.agents.synthesizer import OWNER, synthesize_note
+from app.agents.citations import LanguageCitation
+from app.agents.synthesizer import OWNER, _render_language_block, synthesize_note
 from app.llm.client import LLMClient
 from app.models.state import (
     AgentState,
@@ -163,3 +164,35 @@ async def test_synthesize_includes_critic_feedback_on_retry(
     body = stub.last_messages[0]["content"]
     assert "Previous critic findings" in body
     assert "bad [F99]" in body
+
+
+def test_synthesizer_renders_language_diffs_block_when_present() -> None:
+    """_render_language_block emits an [L#] entry for each citation."""
+    citations = [
+        LanguageCitation(
+            identifier="L1",
+            section="mda",
+            change_type="modified",
+            text=(
+                "Operating expenses rose substantially as we accelerated"
+                " AI infrastructure investment."
+            ),
+            severity="major",
+        ),
+        LanguageCitation(
+            identifier="L2",
+            section="risk_factors",
+            change_type="added",
+            text="A new geopolitical risk could affect international sales.",
+            severity="major",
+        ),
+    ]
+    rendered = _render_language_block(citations)
+    assert "[L1]" in rendered
+    assert "operating expenses rose substantially" in rendered.lower()
+    assert "[L2]" in rendered
+
+
+def test_synthesizer_renders_no_language_changes_message_when_empty() -> None:
+    """_render_language_block returns a human-readable fallback for empty input."""
+    assert "no language changes" in _render_language_block([]).lower()
