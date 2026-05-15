@@ -14,11 +14,11 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.db import build_engine
-from app.memory.models import Base
+from app.memory.models import Base, FilingSection, LanguageDiff
 from app.memory.repository import Repository
 from app.memory.schemas import (
     FilingStatus,
@@ -383,10 +383,6 @@ async def test_insert_comparison_upserts_on_filing_and_metric(
 
 async def test_filing_section_model_roundtrips(session: AsyncSession) -> None:
     """FilingSection rows persist and can be fetched back by section_kind."""
-    from sqlalchemy import select
-
-    from app.memory.models import FilingSection
-
     repo = Repository(session)
     await repo.record_filing(
         filing=NewFiling(
@@ -421,10 +417,6 @@ async def test_filing_section_model_roundtrips(session: AsyncSession) -> None:
 
 async def test_language_diff_model_roundtrips(session: AsyncSession) -> None:
     """LanguageDiff rows persist and can be fetched back by change_type."""
-    from sqlalchemy import select
-
-    from app.memory.models import LanguageDiff
-
     repo = Repository(session)
     await repo.record_filing(
         filing=NewFiling(

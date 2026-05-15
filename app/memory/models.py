@@ -26,6 +26,11 @@ Phase 3 adds two:
   section, with an optional pgvector embedding for similarity search.
 - ``language_diffs``: material changes (added / removed / modified) between a
   current and prior quarter's section, as produced by the language-differ node.
+
+The module is approaching the project's 300-line guideline as of Phase 3.
+Future additions should consider splitting along a clean responsibility
+boundary (e.g., language-vs-numbers tables) rather than continuing to
+grow this single module.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ from decimal import Decimal
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -316,7 +322,8 @@ class FilingSection(Base):
     section_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
-    text_sha: Mapped[str] = mapped_column(String(64), nullable=False)
+    text_sha: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    # psycopg3 returns list[float]; psycopg2 would return numpy.ndarray.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -383,6 +390,9 @@ class LanguageDiff(Base):
     )
 
     __table_args__ = (
+        # NULLs are distinct in Postgres unique constraints, so multiple
+        # `added` rows with prior_section_id=NULL can coexist (intended:
+        # cold-start runs produce many `added` rows with no prior section).
         UniqueConstraint(
             "filing_accession",
             "section_kind",
