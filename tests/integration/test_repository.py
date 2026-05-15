@@ -682,3 +682,5 @@ async def test_list_language_diffs_for_filing_returns_inserted_rows(
         rows = await Repository(session).list_language_diffs_for_filing(accession)
         assert len(rows) == 1
         assert rows[0].change_type == ChangeType.ADDED
+        assert rows[0].severity == Severity.MAJOR
+        assert rows[0].filing_accession == accession
