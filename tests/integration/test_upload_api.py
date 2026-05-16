@@ -266,3 +266,13 @@ async def test_upload_rejects_scanned_pdf(
     assert response.status_code == 422
     detail = response.json()["detail"].lower()
     assert "scanned" in detail or "extractable" in detail
+
+
+async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> None:
+    """``POST /api/chat`` reserves the route; Phase 6 ships the real agent."""
+    response = await app_with_stubbed_graph.post(
+        "/api/chat", json={"trace_id": "x", "message": "What was revenue?"}
+    )
+    assert response.status_code == 501
+    detail = response.json()["detail"].lower()
+    assert "phase 6" in detail
