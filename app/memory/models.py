@@ -73,7 +73,10 @@ class Filing(Base):
 
     __tablename__ = "filings"
 
-    accession_number: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # Widened from 32 to 64 in Phase 4B (migration 0007) so upload-derived
+    # accessions (e.g. ``upload-{uuid4().hex}`` is 39 chars) fit alongside
+    # the 18-char real SEC accession numbers.
+    accession_number: Mapped[str] = mapped_column(String(64), primary_key=True)
     cik: Mapped[str] = mapped_column(String(10), nullable=False)
     ticker: Mapped[str] = mapped_column(String(16), nullable=False)
     # Widened from 8 to 16 in Phase 4B (migration 0006) so the literal
@@ -120,7 +123,7 @@ class FinancialFact(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -274,7 +277,7 @@ class Comparison(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -316,7 +319,7 @@ class FilingSection(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -365,12 +368,12 @@ class LanguageDiff(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
     prior_filing_accession: Mapped[str | None] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="SET NULL"),
         nullable=True,
     )
@@ -461,7 +464,7 @@ class QAPair(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -503,7 +506,7 @@ class Commitment(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -515,7 +518,7 @@ class Commitment(Base):
         String(16), nullable=False, server_default="open"
     )
     resolved_filing_accession: Mapped[str | None] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="SET NULL"),
         nullable=True,
     )
