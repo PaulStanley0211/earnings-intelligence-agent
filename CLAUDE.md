@@ -4,7 +4,68 @@ Autonomous multi-agent system that produces a fact-checked equity research note 
 
 ## Status
 
-In development. Seven-phase build. See [`PLAN.md`](PLAN.md) — the source of truth for scope, architecture, and acceptance criteria.
+Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acceptance criteria.
+
+**Phase 0 — project bootstrap: complete** (commit `0c228e9`, 2026-05-15).
+
+**Phase 1 — Foundation: complete** (commit `ae2a5e2`, PR [#1](https://github.com/PaulStanley0211/earnings-intelligence-agent/pull/1), 2026-05-15).
+
+**Phase 2 — Numbers track: complete** (2026-05-15).
+
+**Phase 3 — Language differ: complete** (commit `ad3b159`, 2026-05-16).
+
+In place from Phase 0:
+- uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
+- Multi-stage [`Dockerfile`](Dockerfile) and [`docker-compose.yml`](docker-compose.yml) (Postgres + pgvector on host port 5434 to avoid Windows host-Postgres collisions, Redis, FastAPI).
+- Fail-fast Pydantic settings in [`app/config.py`](app/config.py) — every required env var validated at startup, including EDGAR User-Agent format.
+- LLM client at [`app/llm/client.py`](app/llm/client.py) with SHA-keyed cassette replay and a daily cost cap that fails closed. Sync `complete()` uses an in-process counter; async `acomplete()` reads/writes the Postgres-backed `daily_llm_spend` table (Phase 2).
+- `AgentState` contract with per-node `StateUpdate` field ownership in [`app/models/state.py`](app/models/state.py).
+- Loguru JSON logging with trace-id propagation and secret scrubbing; OpenTelemetry tracing scaffolding in [`app/observability/`](app/observability/).
+- GitHub Actions CI: ruff, mypy, unit, integration (services), pip-audit, plus a nightly eval workflow.
+- Solo review prompt and ops playbook stubs: [`docs/review-prompt.md`](docs/review-prompt.md), [`docs/runbook.md`](docs/runbook.md).
+
+Added in Phase 1:
+- **Memory layer** ([`app/memory/`](app/memory/)). SQLAlchemy 2.x async ORM models for `filings`, `financial_facts`, `watchlist`, `edgar_poll_log`, `daily_llm_spend` ([`models.py`](app/memory/models.py)); detached Pydantic DTOs ([`schemas.py`](app/memory/schemas.py)); async engine + session factory ([`db.py`](app/memory/db.py)); a single :class:`Repository` ([`repository.py`](app/memory/repository.py)) — all DB access goes through it; Redis async wrapper ([`redis_client.py`](app/memory/redis_client.py)).
+- **First Alembic migration** at [`migrations/versions/20260515_1933_0001_phase1_schema.py`](migrations/versions/20260515_1933_0001_phase1_schema.py) — hand-written, hand-reviewable. `migrations/env.py` now binds `target_metadata = Base.metadata`.
+- **EDGAR client** at [`app/tools/edgar.py`](app/tools/edgar.py) — async httpx, token-bucket rate limit (≤10 rps), tenacity exponential backoff on 5xx and network errors, contact-email User-Agent validated at construction, typed responses (`SubmissionsResponse`, `CompanyFactsResponse`, `RecentFiling`).
+- **XBRL track via companyfacts JSON** at [`app/tools/companyfacts.py`](app/tools/companyfacts.py). The `arelle` raw-XBRL fallback in [`docs/runbook.md`](docs/runbook.md) is deferred to Phase 2.
+- **First agent node**: `financial_extractor` at [`app/agents/financial_extractor.py`](app/agents/financial_extractor.py), a pure function of `AgentState` returning a typed `StateUpdate`.
+- **EDGAR watcher** at [`app/agents/watcher.py`](app/agents/watcher.py): `poll_once(...)` for one-shot use, `watch_forever(...)` for the production service. Idempotent (filings checkpointed by accession), records every cycle to `edgar_poll_log`.
+- **LangGraph skeleton** at [`app/graph.py`](app/graph.py) — `START -> financial_extractor -> END`. Compiled and invoked end-to-end in tests/integration.
+- **CLI**: `uv run python -m app.scripts.poll_once [--ticker T --cik C --company-name N]` ([`app/scripts/poll_once.py`](app/scripts/poll_once.py)).
+- **`/health` upgraded** ([`app/api/health.py`](app/api/health.py)): real Postgres `SELECT 1`, Redis ping, and a 5-minute freshness check on the most recent EDGAR poll. DB outage → HTTP 503; Redis or stale watcher → 200 with `status: degraded`.
+
+Gate evidence at Phase 1 close: ruff clean, mypy clean (28 source files), 62 tests green (44 unit + 18 integration), `coverage report` line coverage 85.22%.
+
+Added in Phase 2:
+- **Extended XBRL concept allowlist** ([`app/tools/companyfacts.py`](app/tools/companyfacts.py)). Beyond Phase 1's income-statement headline set, the synthesiser now sees share counts, operating-expense detail, balance-sheet liquidity (current assets/liabilities, long-term debt, inventory), and operating/investing/financing cash flow.
+- **Consensus tables and migration** ([`migrations/versions/20260515_2230_0002_phase2_schema.py`](migrations/versions/20260515_2230_0002_phase2_schema.py)). Two new tables: `consensus_estimates` (one row per `(ticker, fiscal_year, fiscal_period, metric, source)`) and `comparisons` (one row per filing/metric capturing reported, consensus, surprise, and direction). ORM models in [`app/memory/models.py`](app/memory/models.py); DTOs in [`app/memory/schemas.py`](app/memory/schemas.py); repository methods on [`app/memory/repository.py`](app/memory/repository.py).
+- **Consensus fetcher** ([`app/tools/consensus.py`](app/tools/consensus.py)). Two-tier strategy: Finnhub primary (`/stock/eps-estimate`, `/stock/revenue-estimate`), yfinance fallback. Both providers are Protocol-shaped for test injection. Per-source rows coexist so the comparator can prefer Finnhub when both are present.
+- **Comparator node** ([`app/agents/comparator.py`](app/agents/comparator.py)). Maps us-gaap concepts to comparator metrics (`revenue`, `eps_diluted`, `eps_basic`, `net_income`), pulls consensus, persists `consensus_estimates` and `comparisons` rows, and emits a structured summary into `AgentState.comparisons`. Direction band: ±0.5 percent is `in_line`, beyond is `beat`/`miss`. Owns the `comparisons` field via `_FIELD_OWNERS` in [`app/models/state.py`](app/models/state.py).
+- **Prompt template loader** ([`app/llm/prompts.py`](app/llm/prompts.py)). Parses YAML-ish frontmatter (`version`, `model`, `temperature`), computes a body-SHA so cassette keys move with prompt content, supports `{key}`-style placeholders.
+- **First prompt templates**: `synthesizer/numbers_v1.md` (Opus, temperature 0.0, citation-first contract) and `critic/numbers_v0.md` (deterministic, documented for symmetry).
+- **Synthesiser node** ([`app/agents/synthesizer.py`](app/agents/synthesizer.py)). Renders financials + comparisons into the Opus prompt; calls `LLMClient.acomplete` so the new Postgres-backed cost cap applies. Wraps source data in `<source>` tags per PLAN.md §3. On retry, appends previous critic findings to the user message.
+- **Deterministic critic v0** ([`app/agents/critic.py`](app/agents/critic.py)). Parses every number from the draft note, demands an adjacent `[F#]`/`[C#]` citation, resolves it against a shared citation index ([`app/agents/citations.py`](app/agents/citations.py)) used by both synthesiser and critic, and validates the cited value within metric-appropriate tolerance (1 percent relative for currency, 0.01 absolute for per-share, 0.05 absolute for percentages). Bounded retry at 3 attempts; otherwise emits `loop_exceeded`.
+- **Async LLM cost cap** ([`app/llm/client.py`](app/llm/client.py)). The new `acomplete` method reads `daily_llm_spend` via `Repository.get_daily_spend`, fails closed when adding the worst-case projection would exceed the configured cap, runs the sync Anthropic SDK in a worker thread to avoid blocking the event loop, then commits actual spend via `Repository.add_daily_spend`. The in-process counter remains for the sync `complete()` path used by lower-stakes tests.
+- **Updated LangGraph** ([`app/graph.py`](app/graph.py)). Compiled as `START -> financial_extractor -> comparator -> synthesizer -> critic -> {synthesizer | END}`. The critic-to-synthesizer conditional edge enables the bounded retry loop without manual orchestration.
+
+Gate evidence at Phase 2 close: ruff clean, mypy clean (34 source files), 105 tests green (81 unit + 24 integration), `coverage report` line coverage 86 percent. `pip-audit` reports no known vulnerabilities.
+
+Added in Phase 3:
+- **Section parser** for 10-Q / 10-K MD&A and Risk Factors ([`app/tools/sections.py`](app/tools/sections.py)). Heuristic BeautifulSoup + lxml flatten, regex anchors for `Item 2` / `Item 7` / `Item 1A`, 40-4000 char paragraph filter.
+- **OpenAI embeddings client** ([`app/tools/embeddings.py`](app/tools/embeddings.py)) with SHA-keyed cassette replay, batching, tenacity retries, and a shared daily-cost cap via the existing `daily_llm_spend` table.
+- **`language_differ` agent node** ([`app/agents/language_differ.py`](app/agents/language_differ.py)) running in parallel with `comparator`. Cold-start degrades cleanly with `degraded=True`.
+- **Two new tables** `filing_sections` (pgvector `Vector(1536)`) and `language_diffs` plus the migration at [`migrations/versions/20260515_2330_0003_phase3_schema.py`](migrations/versions/20260515_2330_0003_phase3_schema.py).
+- **Backfill CLI** at [`app/scripts/backfill_language.py`](app/scripts/backfill_language.py) — operator-triggered, idempotent, resumable.
+- **Synthesiser prompt v2** with `[L#]` citations at [`prompts/synthesizer/numbers_with_language_v1.md`](prompts/synthesizer/numbers_with_language_v1.md); critic resolves them with 90% character-similarity tolerance.
+- **80% recall gate** at [`tests/unit/test_recall_gate.py`](tests/unit/test_recall_gate.py) with 15 labelled quarter pairs (synthetic, can be replaced with real EDGAR HTML per [`docs/phase3-labeling.md`](docs/phase3-labeling.md)).
+
+Gate evidence at Phase 3 close: ruff clean, mypy clean (38+ source files), all unit + integration tests green, `coverage report` line coverage >= 85 percent. `pip-audit` reports no known vulnerabilities.
+
+Empty stubs still awaiting later phases — do not assume contents exist:
+`app/delivery/`, `evals/`.
+
+**Phase 4 — not started.**
 
 ## Tech stack
 
@@ -50,8 +111,15 @@ uv run mypy app/
 # Migrations
 uv run alembic upgrade head
 
-# One-shot EDGAR poll (debug)
-uv run python -m app.scripts.poll_once --ticker NVDA
+# One-shot EDGAR poll (debug) - uses the persisted watchlist
+uv run python -m app.scripts.poll_once
+
+# Same, but seed/refresh a ticker first (idempotent)
+uv run python -m app.scripts.poll_once \
+    --ticker NVDA --cik 1045810 --company-name "NVIDIA Corp"
+
+# Backfill 4 prior quarters of language sections (operator-run, once per ticker)
+uv run python -m app.scripts.backfill_language --quarters 4
 ```
 
 ## Conventions
@@ -71,7 +139,9 @@ uv run python -m app.scripts.poll_once --ticker NVDA
 
 ## Required environment variables
 
-`ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `EDGAR_USER_AGENT` (format: `"<name> <email>"`), `MAX_DAILY_LLM_COST_USD`, `LOG_LEVEL`, `ENVIRONMENT` (dev/staging/prod), `LLM_CACHE_DIR`, `EDGAR_POLL_INTERVAL_SECONDS`.
+`ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `EDGAR_USER_AGENT` (format: `"<name> <email>"`), `MAX_DAILY_LLM_COST_USD`, `LOG_LEVEL`, `ENVIRONMENT` (dev/staging/prod), `LLM_CACHE_DIR`, `EDGAR_POLL_INTERVAL_SECONDS`.
+
+Optional: `EMBEDDINGS_MODEL` (defaults to `text-embedding-3-small`).
 
 Optional delivery: `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS`, `SLACK_WEBHOOK_URL`.
 

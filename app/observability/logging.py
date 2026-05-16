@@ -24,6 +24,10 @@ _TRACE_ID: ContextVar[str | None] = ContextVar("trace_id", default=None)
 
 # Patterns we never want to see in a persisted log line. Matching is conservative
 # on purpose: false positives only blank a value, false negatives leak secrets.
+# The generic ``sk-`` prefix covers both Anthropic (``sk-ant-*``) and OpenAI
+# (``sk-proj-*`` / ``sk-*``) provider keys, so all LLM provider keys are
+# redacted by the first pattern. The ``sk-ant-`` entry below is retained for
+# defence-in-depth in case the tuple order is ever changed.
 _SECRET_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
     re.compile(r"sk-[A-Za-z0-9_\-]{16,}"),
     re.compile(r"sk-ant-[A-Za-z0-9_\-]{16,}"),

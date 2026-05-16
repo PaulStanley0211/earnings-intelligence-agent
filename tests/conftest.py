@@ -3,11 +3,17 @@
 The most important job here is to give every test a deterministic environment.
 Settings are sourced from the process environment via pydantic-settings, so we
 install a known-good set of values before the application is imported.
+
+On Windows we also pin asyncio to the selector event loop policy because the
+default ProactorEventLoop is incompatible with psycopg3's async connection
+path; production runs on Linux where this is a no-op.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -17,7 +23,10 @@ import pytest
 _DEFAULT_TEST_ENV: dict[str, str] = {
     "ANTHROPIC_API_KEY": "sk-ant-test-placeholder-key-not-real-do-not-call",
     "FINNHUB_API_KEY": "finnhub-test-placeholder",
-    "DATABASE_URL": "postgresql+psycopg://earnings:earnings@localhost:5432/earnings_test",
+    "OPENAI_API_KEY": "sk-openai-test-placeholder-key-not-real-do-not-call",
+    # Host port 5434 matches docker-compose.yml. CI overrides this with port
+    # 5432 because its Postgres service is a sibling container, not docker-compose.
+    "DATABASE_URL": "postgresql+psycopg://earnings:earnings@localhost:5434/earnings_test",
     "REDIS_URL": "redis://localhost:6379/1",
     "EDGAR_USER_AGENT": "Test Suite tests@example.com",
     "MAX_DAILY_LLM_COST_USD": "1.00",
@@ -28,6 +37,9 @@ _DEFAULT_TEST_ENV: dict[str, str] = {
 
 for key, value in _DEFAULT_TEST_ENV.items():
     os.environ.setdefault(key, value)
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @pytest.fixture()

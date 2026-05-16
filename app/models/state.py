@@ -90,6 +90,7 @@ class AgentState(BaseModel):
 
     # ---- Specialist outputs. Detailed Pydantic models land in their phases. ----
     financials: dict[str, Any] | None = None
+    comparisons: dict[str, Any] | None = None
     language_diffs: list[dict[str, Any]] = Field(default_factory=list)
     qa_pairs: list[dict[str, Any]] = Field(default_factory=list)
     peer_context: dict[str, Any] | None = None
@@ -107,7 +108,7 @@ class AgentState(BaseModel):
 _FIELD_OWNERS: dict[str, frozenset[str]] = {
     "planner": frozenset({"plan", "cost_usd"}),
     "financial_extractor": frozenset({"financials", "cost_usd"}),
-    "comparator": frozenset({"financials", "cost_usd"}),
+    "comparator": frozenset({"comparisons", "cost_usd"}),
     "language_differ": frozenset({"language_diffs", "cost_usd"}),
     "transcript_analyzer": frozenset({"qa_pairs", "cost_usd"}),
     "answer_classifier": frozenset({"qa_pairs", "cost_usd"}),

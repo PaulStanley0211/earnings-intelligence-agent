@@ -8,11 +8,15 @@ so these tests never touch the real API. Coverage:
 - A test-mode call with no cassette and ``REC`` unset raises :class:`CassetteMiss`.
 - The daily cost cap fails closed when a projected call would exceed it.
 - The secret-scrubbing log filter strips API keys from log records.
+- The async :meth:`LLMClient.acomplete` reads/writes the Postgres-backed
+  daily spend through the injected repository.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -155,3 +159,56 @@ def test_cassette_key_is_stable() -> None:
     )
     assert key1 == key2
     assert len(key1) == 64
+
+
+class _StubSpendRepository:
+    def __init__(self, *, initial: Decimal = Decimal("0")) -> None:
+        self._spent = initial
+        self.adds: list[Decimal] = []
+
+    async def get_daily_spend(self, day: date) -> Decimal:
+        return self._spent
+
+    async def add_daily_spend(self, *, day: date, amount_usd: Decimal) -> Decimal:
+        self.adds.append(amount_usd)
+        self._spent = self._spent + amount_usd
+        return self._spent
+
+
+async def test_acomplete_records_spend_to_repository(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REC", "1")
+    repo = _StubSpendRepository()
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=_stub_anthropic())
+    response = await client.acomplete(
+        prompt_version="acomplete-test/v1",
+        messages=[{"role": "user", "content": "hi"}],
+        repository=repo,
+        model="claude-sonnet-4-6",
+    )
+    assert response.cost_usd > 0
+    assert len(repo.adds) == 1
+    assert repo.adds[0] > Decimal("0")
+
+
+async def test_acomplete_fails_closed_when_db_spend_exceeds_cap(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REC", "1")
+    # MAX_DAILY_LLM_COST_USD defaults to 1.0 in test env.
+    repo = _StubSpendRepository(initial=Decimal("0.99"))
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=_stub_anthropic())
+    with pytest.raises(CostCapExceeded):
+        await client.acomplete(
+            prompt_version="cap-test/v1",
+            messages=[{"role": "user", "content": "hi"}],
+            repository=repo,
+            model="claude-opus-4-7",
+            max_tokens=512,
+        )
+    assert repo.adds == [], "no spend should be recorded when the cap is exceeded"

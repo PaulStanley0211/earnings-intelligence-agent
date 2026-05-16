@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     # ---- Market data ----
     finnhub_api_key: SecretStr = Field(..., description="Finnhub API key for analyst consensus.")
 
+    # ---- Embeddings (Phase 3) ----
+    openai_api_key: SecretStr = Field(
+        ..., description="OpenAI API key for the embeddings client (Phase 3)."
+    )
+    embeddings_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI embeddings model used by the language differ.",
+    )
+
     # ---- Datastores ----
     database_url: str = Field(..., description="SQLAlchemy URL for the primary Postgres database.")
     redis_url: str = Field(..., description="Redis connection URL used by RQ and caches.")

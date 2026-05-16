@@ -90,3 +90,16 @@ def test_filing_event_is_immutable() -> None:
     event = _build_state().filing_event
     with pytest.raises(ValidationError):
         event.ticker = "NVDA"  # type: ignore[misc]
+
+
+def test_language_differ_owns_language_diffs() -> None:
+    update = StateUpdate(
+        owner="language_differ",
+        changes={"language_diffs": [{"section": "mda", "diffs": []}]},
+    )
+    assert update.changes["language_diffs"][0]["section"] == "mda"
+
+
+def test_language_differ_cannot_mutate_comparisons() -> None:
+    with pytest.raises(ValidationError):
+        StateUpdate(owner="language_differ", changes={"comparisons": {}})
