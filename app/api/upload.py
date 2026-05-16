@@ -34,6 +34,15 @@ router = APIRouter(prefix="/api", tags=["upload"])
 _ACCEPTED_PDF_TYPES: Final[set[str]] = {"application/pdf"}
 _ACCEPTED_TEXT_TYPES: Final[set[str]] = {"text/plain"}
 
+# Allowlist for the ``filing_type`` form field. Mirrors
+# :class:`app.models.state.FilingForm` exactly; expressing it as a
+# ``Literal`` here lets FastAPI return 422 on unknown values before the
+# request body is even parsed, so we never burn parser work on a request
+# that the intake validator would reject anyway. ``TRANSCRIPT`` covers
+# user-uploaded earnings-call transcripts routed through the Phase 4B
+# transcript-analyzer track.
+FilingTypeForm = Literal["8-K", "10-Q", "10-K", "TRANSCRIPT"]
+
 
 class AnalysisPayload(BaseModel):
     """The structured analysis distilled from the upload."""
@@ -92,7 +101,7 @@ def _parse_or_422(content_type: str | None, raw: bytes) -> ParsedDocument:
 async def post_upload(
     request: Request,
     ticker: Annotated[str, Form()],
-    filing_type: Annotated[str, Form()],
+    filing_type: Annotated[FilingTypeForm, Form()],
     file: Annotated[UploadFile, File()],
     session: Annotated[AsyncSession, Depends(get_session)],
     graph: Annotated[

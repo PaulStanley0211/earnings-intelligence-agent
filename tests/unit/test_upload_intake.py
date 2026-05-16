@@ -151,6 +151,31 @@ async def test_intake_rejects_unsupported_filing_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intake_accepts_transcript_filing_type() -> None:
+    """``TRANSCRIPT`` is in the Phase 4B form allowlist (spec §3.5)."""
+    from app.models.state import FilingForm
+
+    repo = _FakeRepository()
+    parsed = ParsedDocument(
+        text="Operator: Good afternoon and welcome to the call.",
+        char_count=49,
+        page_count=None,
+        content_sha256="a" * 64,
+    )
+    event = await intake_upload(
+        ticker="MSFT",
+        filing_type="TRANSCRIPT",
+        original_filename="msft-call-q4.txt",
+        parsed=parsed,
+        repository=repo,
+    )
+    assert event.form is FilingForm.TRANSCRIPT
+    assert event.form.value == "TRANSCRIPT"
+    assert len(repo.saved) == 1
+    assert repo.saved[0].filing_type == "TRANSCRIPT"
+
+
+@pytest.mark.asyncio
 async def test_intake_recovers_from_concurrent_duplicate_insert() -> None:
     """When a concurrent caller wins the insert race, we recover idempotently."""
     from sqlalchemy.exc import IntegrityError

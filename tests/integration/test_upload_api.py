@@ -268,6 +268,82 @@ async def test_upload_rejects_scanned_pdf(
     assert "scanned" in detail or "extractable" in detail
 
 
+async def test_upload_accepts_transcript_filing_type_plain_text(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """``filing_type=TRANSCRIPT`` with text/plain returns 200 (spec §3.5)."""
+    transcript_body = (
+        b"Operator: Good afternoon and welcome to the Microsoft fiscal Q4 "
+        b"earnings call. With us today are Satya Nadella, chief executive "
+        b"officer, and Amy Hood, chief financial officer.\n\n"
+        b"Satya Nadella: Thank you, and good afternoon, everyone. We had a "
+        b"strong quarter, with revenue of 61.9 billion dollars, up 17 percent "
+        b"year over year. Cloud revenue grew 23 percent. AI-driven workloads "
+        b"continue to drive meaningful customer adoption across all clouds.\n\n"
+        b"Amy Hood: Thanks, Satya. For the full year, we generated 245 "
+        b"billion in revenue. Operating margin expanded 100 basis points. "
+        b"Looking ahead, we expect double-digit revenue and operating-income "
+        b"growth in the coming year as we continue to invest in capacity to "
+        b"meet AI demand.\n\n"
+        b"Analyst (Keith Weiss, Morgan Stanley): Thanks for taking the "
+        b"question. Can you talk about the trajectory of Azure growth into "
+        b"the next year and how to think about capex pacing?\n\n"
+        b"Satya Nadella: Sure. We remain confident in the Azure growth "
+        b"trajectory and we will continue to scale infrastructure to match "
+        b"demand. Amy can speak to the capex framing."
+    )
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "TRANSCRIPT"},
+        files={
+            "file": ("msft-call-q4.txt", transcript_body, "text/plain"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["upload_id"]
+
+
+async def test_upload_accepts_transcript_filing_type_pdf(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """``filing_type=TRANSCRIPT`` with application/pdf returns 200.
+
+    Re-uses an existing 8-K fixture for body bytes; the bytes themselves
+    are an arbitrary readable PDF -- the test exercises the API surface,
+    not transcript-specific extraction (the stubbed graph short-circuits
+    the analyzer).
+    """
+    pdf_bytes = (_FIXTURES / "0001193125-26-027198.pdf").read_bytes()
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "TRANSCRIPT"},
+        files={
+            "file": ("msft-call-q4.pdf", pdf_bytes, "application/pdf"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "completed"
+
+
+async def test_upload_rejects_unknown_filing_type(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """A filing_type outside the allowlist (8-K/10-Q/10-K/TRANSCRIPT) is rejected."""
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "FOO"},
+        files={"file": ("x.txt", b"hello world", "text/plain")},
+    )
+    # FastAPI/Pydantic returns 422 for a Literal-form-field allowlist miss.
+    assert response.status_code == 422, response.text
+
+
 async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> None:
     """``POST /api/chat`` reserves the route; Phase 6 ships the real agent."""
     response = await app_with_stubbed_graph.post(

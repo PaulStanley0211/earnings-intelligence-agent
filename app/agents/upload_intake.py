@@ -45,7 +45,12 @@ class _SupportsUploadStorage(Protocol):
 
 
 def _filing_form(filing_type: str) -> FilingForm:
-    """Map the user-supplied filing-type string to the enum the graph uses."""
+    """Map the user-supplied filing-type string to the enum the graph uses.
+
+    Accepts every member of :class:`FilingForm`, including ``TRANSCRIPT``
+    (Phase 4B), so user-uploaded earnings-call transcripts route through
+    the transcript-analyzer track in the compiled graph.
+    """
     try:
         return FilingForm(filing_type)
     except ValueError as exc:
