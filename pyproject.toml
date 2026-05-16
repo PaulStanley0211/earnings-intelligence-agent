@@ -40,6 +40,7 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "lxml>=5.2",
     "pgvector>=0.3",
+    "pypdf>=6.11.0",
 ]
 
 [project.optional-dependencies]
@@ -153,6 +154,5 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "coverage>=7.14.0",
-    "pypdf>=6.11.0",
     "pytest-cov>=7.1.0",
 ]

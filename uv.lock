@@ -612,6 +612,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pypdf" },
     { name = "redis" },
     { name = "sqlalchemy" },
     { name = "tenacity" },
@@ -634,7 +635,6 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
-    { name = "pypdf" },
     { name = "pytest-cov" },
 ]
 
@@ -658,6 +658,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.4" },
+    { name = "pypdf", specifier = ">=6.11.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
@@ -674,7 +675,6 @@ provides-extras = ["dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage", specifier = ">=7.14.0" },
-    { name = "pypdf", specifier = ">=6.11.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
 ]
 
