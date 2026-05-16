@@ -162,6 +162,16 @@ async def post_upload(
         # back automatically when this propagates.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    # Commit the uploaded_documents INSERT before the graph runs. Each graph
+    # node opens its OWN session via the process-wide session factory; until
+    # this commit lands, those sessions are isolated from the still-pending
+    # write on the route's session and the transcript_analyzer's
+    # ``get_uploaded_document`` lookup returns ``None`` (the node then
+    # silently self-skips). The row is append-only per CLAUDE.md, so it is
+    # safe to keep the row even if ``graph.ainvoke`` raises below; the
+    # caller's error response is consistent with the rest of the system.
+    await session.commit()
+
     trace_id = uuid4().hex
     initial_state = AgentState(
         trace_id=trace_id,

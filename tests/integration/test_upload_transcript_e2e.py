@@ -50,8 +50,6 @@ from app.main import create_app
 from app.memory.db import build_engine, dispose_engine, get_engine, get_session_factory
 from app.memory.models import Base
 from app.memory.repository import Repository
-from app.memory.schemas import NewUploadedDocument
-from app.tools.documents import parse_plain_text
 from app.tools.edgar import CompanyFactsResponse
 
 pytestmark = pytest.mark.integration
@@ -190,53 +188,6 @@ async def seed_watchlist_nimbus(fresh_schema: None) -> AsyncIterator[None]:
     yield
 
 
-@pytest_asyncio.fixture()
-async def preseed_nimbus_q2_upload(
-    seed_watchlist_nimbus: None,
-) -> AsyncIterator[str]:
-    """Pre-commit the NIMBUS Q2 upload so the transcript analyzer can read it.
-
-    Why pre-seed: the production ``POST /api/upload`` route opens its session
-    via :func:`app.api.dependencies.get_session`, passes a non-committed
-    :class:`Repository` to :func:`app.agents.upload_intake.intake_upload`,
-    then invokes the compiled graph from inside the same request scope.
-    Each graph-node closure opens its OWN session from the process-wide
-    session factory; those sessions are isolated from the still-uncommitted
-    write in the route's session, so the transcript analyzer's
-    ``Repository.get_uploaded_document`` lookup returns ``None`` and the
-    node self-skips before any LLM call lands.
-
-    Pre-committing the upload row up front and relying on the intake's
-    SHA-256 dedupe means the route's call to :func:`intake_upload` short-
-    circuits to ``existing.upload_id`` instead of trying to insert a new
-    row, and the analyzer then finds the committed document in its own
-    session. The end-to-end HTTP surface is still exercised; only the
-    visibility ordering shifts.
-
-    Yields the canonical ``upload_id`` for the seeded row so the test can
-    cross-check the API response.
-    """
-    raw = _NIMBUS_Q2.read_bytes()
-    parsed = parse_plain_text(raw)
-    upload_id = "nimbusq2e2e000000000000000000001"  # 32-char synthetic id.
-    engine = get_engine()
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        await Repository(session).add_uploaded_document(
-            NewUploadedDocument(
-                upload_id=upload_id,
-                ticker="NIMBUS",
-                filing_type="TRANSCRIPT",
-                original_filename="nimbus_q2.txt",
-                content_sha256=parsed.content_sha256,
-                parsed_text=parsed.text,
-                parsed_char_count=parsed.char_count,
-                page_count=parsed.page_count,
-            )
-        )
-        await session.commit()
-    yield upload_id
-
-
 def _build_replay_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """Build the production graph wired with stubs + cassette-replay LLM.
 
@@ -287,7 +238,7 @@ async def replay_client() -> AsyncIterator[AsyncClient]:
 
 
 async def test_upload_transcript_runs_pipeline_to_final_note(
-    preseed_nimbus_q2_upload: str,
+    seed_watchlist_nimbus: None,
     replay_client: AsyncClient,
 ) -> None:
     """Upload the NIMBUS Q2 transcript and verify the pipeline reaches a final note.
@@ -295,8 +246,8 @@ async def test_upload_transcript_runs_pipeline_to_final_note(
     The assertions check that:
 
     1. The upload route returns ``status=completed``.
-    2. The pre-seeded upload row is matched by ``intake_upload``'s SHA-256
-       dedupe so the API's ``upload_id`` agrees with the seeded fixture.
+    2. The API returns a non-empty ``upload_id`` (matched against the
+       freshly-inserted row by :func:`intake_upload`).
     3. The transcript analyzer ran (the synthesizer is the only path that
        can emit ``[Q#]`` or ``[K#]`` citations into the draft, so their
        presence in ``final_note`` proves the analyzer's state landed).
@@ -306,6 +257,14 @@ async def test_upload_transcript_runs_pipeline_to_final_note(
     The response payload defined by :class:`app.api.upload.AnalysisPayload`
     does *not* surface ``qa_pairs`` or ``commitments`` directly; their
     presence is inferred from the final-note citation tokens.
+
+    Historical note: this test previously relied on a ``preseed_nimbus_q2_upload``
+    fixture to work around the Phase 4B Task 11c session-visibility bug -- the
+    upload row was committed only after ``graph.ainvoke`` returned, so the
+    analyzer's separately-opened session never saw the new row. The route now
+    commits explicitly between intake and graph invocation; see
+    :func:`tests.integration.test_upload_api.test_upload_commits_before_graph_invoke`
+    for the regression test that locks in that fix.
     """
     payload = _NIMBUS_Q2.read_bytes()
     response = await replay_client.post(
@@ -317,10 +276,7 @@ async def test_upload_transcript_runs_pipeline_to_final_note(
     body = response.json()
 
     assert body["status"] == "completed"
-    assert body["upload_id"] == preseed_nimbus_q2_upload, (
-        "intake should have dedupe-matched the pre-seeded row; "
-        f"got upload_id={body['upload_id']!r} vs seeded={preseed_nimbus_q2_upload!r}"
-    )
+    assert body["upload_id"], "upload_id must be returned for downstream chat lookups"
     assert body["trace_id"], "trace_id must be returned for log correlation"
 
     analysis = body["analysis"]

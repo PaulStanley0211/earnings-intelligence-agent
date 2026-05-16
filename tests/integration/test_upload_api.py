@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_compiled_graph, get_edgar_client
 from app.main import create_app
-from app.memory.db import build_engine, dispose_engine, get_engine
+from app.memory.db import build_engine, dispose_engine, get_engine, get_session_factory
 from app.memory.models import Base
 from app.memory.repository import Repository
 from app.models.state import AgentState
@@ -342,6 +342,109 @@ async def test_upload_rejects_unknown_filing_type(
     )
     # FastAPI/Pydantic returns 422 for a Literal-form-field allowlist miss.
     assert response.status_code == 422, response.text
+
+
+class _VisibilityCheckingGraph:
+    """Stub graph that probes uploaded_documents from a fresh session.
+
+    The probe runs inside ``ainvoke`` so it executes BEFORE the route
+    finishes and the ``get_session`` dependency's tail-commit fires. The
+    fresh session opened from the process-wide :func:`get_session_factory`
+    represents what every real graph node sees: an independent connection
+    that cannot observe writes still pending on the route's session.
+
+    Used by :func:`test_upload_commits_before_graph_invoke` to lock in the
+    Phase 4B Task 11c fix -- without the explicit commit in
+    :func:`app.api.upload.post_upload`, the probe finds no row and the
+    transcript analyzer (and any other node opening its own session) self-
+    skips silently.
+    """
+
+    def __init__(self) -> None:
+        """Record whether the probed upload row was visible from a fresh session."""
+        self.upload_visible: bool = False
+        self.probed_upload_id: str | None = None
+
+    async def ainvoke(
+        self, state: AgentState | dict[str, Any], **_kw: Any
+    ) -> dict[str, Any]:
+        """Probe ``uploaded_documents`` from a fresh session, then return a final state."""
+        if isinstance(state, AgentState):
+            payload: dict[str, Any] = state.model_dump()
+        else:
+            payload = dict(state)
+        filing_event = (
+            state.filing_event
+            if isinstance(state, AgentState)
+            else state.get("filing_event")
+        )
+        assert filing_event is not None, "test stub requires a FilingEvent on state"
+        accession_number = (
+            filing_event.accession_number
+            if hasattr(filing_event, "accession_number")
+            else filing_event["accession_number"]
+        )
+        upload_id = accession_number.removeprefix("upload-")
+        self.probed_upload_id = upload_id
+
+        factory = get_session_factory()
+        async with factory() as fresh_session:
+            doc = await Repository(fresh_session).get_uploaded_document(upload_id)
+            self.upload_visible = doc is not None
+
+        # Keep the response shape valid so the route returns 200.
+        payload["financials"] = {"source": "uploaded"}
+        payload["comparisons"] = {"consensus_source": "finnhub", "metrics": []}
+        payload["language_diffs"] = []
+        payload["draft_note"] = "stub draft [F1]"
+        payload["final_note"] = "stub draft [F1]"
+        payload["critic_verdict"] = "accepted"
+        return payload
+
+
+async def test_upload_commits_before_graph_invoke(
+    seed_watchlist_msft: None,
+) -> None:
+    """The uploaded_documents row must be visible to a separately-opened session
+    before ``graph.ainvoke`` runs, so the transcript_analyzer (or any other graph
+    node opening its own session via :func:`get_session_factory`) can read it.
+
+    Regression for the Phase 4B Task 11c visibility bug: prior to the explicit
+    ``await session.commit()`` between :func:`intake_upload` and
+    ``graph.ainvoke``, the route's session held the INSERT until the request
+    finished, so a fresh session opened inside the graph saw no row.
+    """
+    visibility_graph = _VisibilityCheckingGraph()
+
+    def _provide_visibility_graph() -> _VisibilityCheckingGraph:
+        """Sync dependency override returning the shared probe graph."""
+        return visibility_graph
+
+    app = create_app()
+    app.dependency_overrides[get_edgar_client] = _stub_edgar
+    app.dependency_overrides[get_compiled_graph] = _provide_visibility_graph
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            pdf_bytes = (_FIXTURES / "0001193125-26-027198.pdf").read_bytes()
+            response = await client.post(
+                "/api/upload",
+                data={"ticker": "MSFT", "filing_type": "8-K"},
+                files={"file": ("msft-8k.pdf", pdf_bytes, "application/pdf")},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert visibility_graph.probed_upload_id is not None, (
+        "stub graph should have observed a FilingEvent on state"
+    )
+    assert visibility_graph.upload_visible, (
+        "uploaded_documents row was NOT visible to a fresh session opened "
+        "inside graph.ainvoke -- the route must commit its session BEFORE "
+        "invoking the graph so transcript_analyzer and other nodes that open "
+        "their own sessions via get_session_factory can read the row."
+    )
 
 
 async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> None:
