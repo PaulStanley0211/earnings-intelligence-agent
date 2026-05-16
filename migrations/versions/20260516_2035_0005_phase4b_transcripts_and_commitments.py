@@ -65,6 +65,10 @@ def upgrade() -> None:
             "ordinal",
             name="uq_qa_pairs_filing_accession_ordinal",
         ),
+        sa.CheckConstraint(
+            "answer_class IN ('direct', 'partial', 'deflected')",
+            name="qa_pairs_answer_class_valid",
+        ),
     )
     op.create_index(
         "ix_qa_pairs_filing_accession",
@@ -110,6 +114,10 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        sa.CheckConstraint(
+            "status IN ('open', 'met', 'missed', 'still_open')",
+            name="commitments_status_valid",
+        ),
     )
     op.create_index(
         "ix_commitments_ticker_status",
@@ -119,20 +127,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Drop the indexes then the tables (reverse of upgrade).
+    """Drop the two Phase 4B tables.
 
-    Restores ``alembic_version.version_num`` to its original ``VARCHAR(32)``
-    width last, after the version row has already been rewound by Alembic
-    to the prior (shorter) revision id.
+    The widening of ``alembic_version.version_num`` from ``VARCHAR(32)`` to
+    ``VARCHAR(64)`` performed in :func:`upgrade` is intentionally left in
+    place -- that column holds Alembic's bookkeeping state and a wider type
+    is forward-compatible with all future revision identifiers.
     """
     op.drop_index("ix_commitments_ticker_status", table_name="commitments")
     op.drop_table("commitments")
     op.drop_index("ix_qa_pairs_filing_accession", table_name="qa_pairs")
     op.drop_table("qa_pairs")
-    op.alter_column(
-        "alembic_version",
-        "version_num",
-        existing_type=sa.String(length=64),
-        type_=sa.String(length=32),
-        existing_nullable=False,
-    )
