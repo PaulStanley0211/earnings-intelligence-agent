@@ -39,6 +39,20 @@ CASSETTE_DIR: Final[Path] = (
 )
 """Cassette directory dedicated to the F1 + recall gates."""
 
+RECONCILIATION_CASSETTE_DIR: Final[Path] = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "cassettes"
+    / "transcript_reconciliation"
+)
+"""Cassette directory dedicated to the cross-quarter reconciliation gate.
+
+The Task 11 integration test (``tests/integration/test_commitment_reconciliation.py``)
+records both the extract and reconcile Sonnet calls for each NIMBUS transcript
+under this directory. Keeping these cassettes separate from the F1 gate's
+extract-only cassettes avoids accidental cross-contamination if either prompt
+template's body SHA ever drifts."""
+
 EXTRACT_PROMPT_NAME: Final[str] = "transcript_analyzer/extract_v1"
 """Mirrors :data:`app.agents.transcript_analyzer.EXTRACT_PROMPT_NAME`."""
 
@@ -114,6 +128,20 @@ def build_llm_client() -> LLMClient:
     """
     CASSETTE_DIR.mkdir(parents=True, exist_ok=True)
     return LLMClient(cassette_dir=CASSETTE_DIR)
+
+
+def build_reconciliation_llm_client() -> LLMClient:
+    """Construct an :class:`LLMClient` for the reconciliation integration test.
+
+    Points at :data:`RECONCILIATION_CASSETTE_DIR` so the extract + reconcile
+    cassettes recorded for the cross-quarter test stay isolated from the F1
+    gate's extract-only cassettes. Test mode (``ENVIRONMENT=test``) makes
+    the client raise :class:`app.llm.client.CassetteMiss` on any unrecorded
+    call so missing cassettes surface as a hard failure rather than
+    silently triggering a network call.
+    """
+    RECONCILIATION_CASSETTE_DIR.mkdir(parents=True, exist_ok=True)
+    return LLMClient(cassette_dir=RECONCILIATION_CASSETTE_DIR)
 
 
 async def run_extract(
