@@ -103,6 +103,14 @@ class Repository:
         result = await self._session.execute(stmt)
         return [WatchlistRecord.model_validate(row) for row in result.scalars().all()]
 
+    async def get_watchlist_entry_by_ticker(
+        self, ticker: str
+    ) -> WatchlistRecord | None:
+        """Return the watchlist entry whose ticker matches (case-insensitive), or None."""
+        stmt = select(WatchlistEntry).where(WatchlistEntry.ticker == ticker.upper())
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        return WatchlistRecord.model_validate(row) if row is not None else None
+
     # ---- filings ----
 
     async def record_filing(self, *, filing: NewFiling) -> FilingRecord | None:
