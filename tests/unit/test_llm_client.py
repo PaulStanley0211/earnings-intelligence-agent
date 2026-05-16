@@ -200,7 +200,13 @@ async def test_acomplete_fails_closed_when_db_spend_exceeds_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("REC", "1")
-    # MAX_DAILY_LLM_COST_USD defaults to 1.0 in test env.
+    # Pin the cap explicitly: the project's conftest defaults this to $1.00 via
+    # os.environ.setdefault, but CI workflows set $10.0 directly, which bypasses
+    # the default. Set it here so the test is independent of caller environment.
+    monkeypatch.setenv("MAX_DAILY_LLM_COST_USD", "1.00")
+    from app.config import reset_settings_cache
+
+    reset_settings_cache()
     repo = _StubSpendRepository(initial=Decimal("0.99"))
     client = LLMClient(cassette_dir=cassette_dir, anthropic_client=_stub_anthropic())
     with pytest.raises(CostCapExceeded):
