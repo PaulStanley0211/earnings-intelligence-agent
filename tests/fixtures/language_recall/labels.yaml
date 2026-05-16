@@ -1,0 +1,191 @@
+pairs:
+  - id: MSFT-q1-q2-mda
+    ticker: MSFT
+    section_kind: mda
+    current_fixture: MSFT/q2_mda.html
+    prior_fixture: MSFT/q1_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "operating expenses rose substantially as we accelerated artificial intelligence"
+      - change_type: removed
+        paragraph_excerpt: "macroeconomic conditions to remain volatile through the fiscal year"
+      - change_type: added
+        paragraph_excerpt: "new geopolitical tension in key international markets"
+
+  - id: MSFT-q2-q3-mda
+    ticker: MSFT
+    section_kind: mda
+    current_fixture: MSFT/q3_mda.html
+    prior_fixture: MSFT/q2_mda.html
+    labels:
+      - change_type: removed
+        paragraph_excerpt: "cash flow from operations remained strong during the quarter"
+      - change_type: added
+        paragraph_excerpt: "free cash flow declined sequentially due to elevated capital expenditures"
+      - change_type: removed
+        paragraph_excerpt: "new geopolitical tension in key international markets has created uncertainty"
+      - change_type: added
+        paragraph_excerpt: "copilot adoption across microsoft 365 and github accelerated meaningfully"
+
+  - id: MSFT-q3-q4-mda
+    ticker: MSFT
+    section_kind: mda
+    current_fixture: MSFT/q4_mda.html
+    prior_fixture: MSFT/q3_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "operating expenses moderated year-over-year as the prior period"
+      - change_type: removed
+        paragraph_excerpt: "intelligent cloud segment delivered double-digit revenue growth driven by azure"
+      - change_type: added
+        paragraph_excerpt: "we reduced our workforce in certain hardware divisions"
+
+  - id: AAPL-q1-q2-mda
+    ticker: AAPL
+    section_kind: mda
+    current_fixture: AAPL/q2_mda.html
+    prior_fixture: AAPL/q1_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "iphone revenue declined 2 percent year-over-year as competitive intensity"
+      - change_type: added
+        paragraph_excerpt: "apple intelligence features launched in select markets and languages"
+
+  - id: AAPL-q2-q3-mda
+    ticker: AAPL
+    section_kind: mda
+    current_fixture: AAPL/q3_mda.html
+    prior_fixture: AAPL/q2_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "net sales increased 8 percent driven by stronger-than-expected iphone demand"
+      - change_type: modified
+        paragraph_excerpt: "gross margin remained stable sequentially as pricing discipline"
+
+  - id: AAPL-q3-q4-mda
+    ticker: AAPL
+    section_kind: mda
+    current_fixture: AAPL/q4_mda.html
+    prior_fixture: AAPL/q3_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "iphone revenue accelerated to 7 percent growth year-over-year"
+      - change_type: modified
+        paragraph_excerpt: "gross margin expanded meaningfully as the new iphone product mix"
+      - change_type: removed
+        paragraph_excerpt: "we returned over 25 billion dollars to shareholders during the quarter"
+      - change_type: removed
+        paragraph_excerpt: "apple intelligence features launched in select markets and languages"
+      - change_type: added
+        paragraph_excerpt: "capital expenditures increased year-over-year as we invested in advanced manufacturing"
+
+  - id: NVDA-q1-q2-mda
+    ticker: NVDA
+    section_kind: mda
+    current_fixture: NVDA/q2_mda.html
+    prior_fixture: NVDA/q1_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "gaming revenue recovered and grew 18 percent year-over-year as inventory"
+      - change_type: removed
+        paragraph_excerpt: "we expect supply constraints to ease progressively over the coming quarters"
+      - change_type: added
+        paragraph_excerpt: "export control restrictions imposed by the united states government on advanced semiconductor"
+
+  - id: NVDA-q2-q3-mda
+    ticker: NVDA
+    section_kind: mda
+    current_fixture: NVDA/q3_mda.html
+    prior_fixture: NVDA/q2_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "data center revenue surpassed prior records as blackwell architecture products"
+      - change_type: modified
+        paragraph_excerpt: "gross margin contracted modestly from peak levels as blackwell production"
+      - change_type: modified
+        paragraph_excerpt: "operating expenses grew at a slower rate than revenue as scale benefits"
+
+  - id: NVDA-q3-q4-mda
+    ticker: NVDA
+    section_kind: mda
+    current_fixture: NVDA/q4_mda.html
+    prior_fixture: NVDA/q3_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "gaming revenue grew 12 percent year-over-year, moderating from earlier quarters"
+      - change_type: modified
+        paragraph_excerpt: "gross margin recovered toward prior peak levels as blackwell manufacturing yields"
+      - change_type: added
+        paragraph_excerpt: "we initiated a new share repurchase authorization of 25 billion dollars"
+
+  - id: AMZN-q1-q2-mda
+    ticker: AMZN
+    section_kind: mda
+    current_fixture: AMZN/q2_mda.html
+    prior_fixture: AMZN/q1_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "amazon web services revenue grew 19 percent year-over-year as demand"
+      - change_type: removed
+        paragraph_excerpt: "operating income increased substantially year-over-year as productivity improvements"
+      - change_type: added
+        paragraph_excerpt: "international segment operating losses narrowed meaningfully as newer geographies"
+
+  - id: AMZN-q2-q3-mda
+    ticker: AMZN
+    section_kind: mda
+    current_fixture: AMZN/q3_mda.html
+    prior_fixture: AMZN/q2_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "net sales increased 11 percent year-over-year, reflecting strong performance"
+      - change_type: modified
+        paragraph_excerpt: "advertising services revenue grew 22 percent year-over-year, the strongest growth rate"
+      - change_type: added
+        paragraph_excerpt: "we launched trainium and inferentia chip-powered instances in aws"
+
+  - id: AMZN-q3-q4-mda
+    ticker: AMZN
+    section_kind: mda
+    current_fixture: AMZN/q4_mda.html
+    prior_fixture: AMZN/q3_mda.html
+    labels:
+      - change_type: modified
+        paragraph_excerpt: "net sales increased 10 percent year-over-year during the fourth quarter"
+      - change_type: modified
+        paragraph_excerpt: "amazon web services revenue grew 21 percent year-over-year in the fourth quarter"
+      - change_type: modified
+        paragraph_excerpt: "international segment turned to operating profitability for the first time"
+
+  - id: MSFT-q1-q3-risk-factors
+    ticker: MSFT
+    section_kind: risk_factors
+    current_fixture: MSFT/q3_risk_factors.html
+    prior_fixture: MSFT/q1_risk_factors.html
+    labels:
+      - change_type: removed
+        paragraph_excerpt: "regulatory scrutiny of large technology companies continues to increase globally"
+      - change_type: added
+        paragraph_excerpt: "constraints in the global supply of specialized artificial intelligence accelerator chips"
+
+  - id: NVDA-q2-q4-risk-factors
+    ticker: NVDA
+    section_kind: risk_factors
+    current_fixture: NVDA/q4_risk_factors.html
+    prior_fixture: NVDA/q2_risk_factors.html
+    labels:
+      - change_type: removed
+        paragraph_excerpt: "rapid pace of development in the artificial intelligence software ecosystem"
+      - change_type: added
+        paragraph_excerpt: "new domestic content requirements embedded in legislation governing government procurement"
+
+  - id: AMZN-q1-q3-risk-factors
+    ticker: AMZN
+    section_kind: risk_factors
+    current_fixture: AMZN/q3_risk_factors.html
+    prior_fixture: AMZN/q1_risk_factors.html
+    labels:
+      - change_type: removed
+        paragraph_excerpt: "growing regulatory oversight of our marketplace business model, including proposed legislation"
+      - change_type: added
+        paragraph_excerpt: "heightened scrutiny from consumer protection agencies regarding algorithmic pricing"
