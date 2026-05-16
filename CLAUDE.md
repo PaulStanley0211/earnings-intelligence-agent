@@ -12,7 +12,7 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 2 — Numbers track: complete** (2026-05-15).
 
-**Phase 3 — Language differ: complete** (commit `<COMMIT-SHA>`, 2026-05-16).
+**Phase 3 — Language differ: complete** (commit `ad3b159`, 2026-05-16).
 
 In place from Phase 0:
 - uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
