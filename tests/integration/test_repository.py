@@ -18,11 +18,14 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.memory.db import build_engine
-from app.memory.models import Base, FilingSection, LanguageDiff
+from app.memory.models import Base, Commitment, FilingSection, LanguageDiff
 from app.memory.repository import Repository
 from app.memory.schemas import (
+    AnswerClass,
     ChangeType,
+    CommitmentStatus,
     FilingStatus,
+    NewCommitment,
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
@@ -30,6 +33,7 @@ from app.memory.schemas import (
     NewFinancialFact,
     NewLanguageDiff,
     NewPollLog,
+    NewQAPair,
     PollStatus,
     SectionKind,
     Severity,
@@ -789,14 +793,11 @@ async def test_add_qa_pairs_idempotent_on_filing_accession_ordinal(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """Re-inserting the same (filing_accession, ordinal) tuples is a no-op."""
-    from app.memory.schemas import AnswerClass, NewQAPair
-
     accession = "0000789019-26-000001"
     async with session_factory() as session:
         await _record_msft_filing(session, accession=accession)
         first_batch = [
             NewQAPair(
-                filing_accession=accession,
                 ordinal=i,
                 analyst_name=f"Analyst {i}",
                 question_text=f"Question {i}?",
@@ -816,7 +817,6 @@ async def test_add_qa_pairs_idempotent_on_filing_accession_ordinal(
         second_batch = [
             *first_batch,
             NewQAPair(
-                filing_accession=accession,
                 ordinal=4,
                 analyst_name="Analyst 4",
                 question_text="Question 4?",
@@ -830,6 +830,7 @@ async def test_add_qa_pairs_idempotent_on_filing_accession_ordinal(
         )
         await session.commit()
         # The follow-up SELECT must surface all four ordinals once each.
+        assert len(second) == 4
         assert {p.ordinal for p in second} == {1, 2, 3, 4}
 
     async with session_factory() as session:
@@ -842,22 +843,16 @@ async def test_add_commitments_idempotent_on_source_quote(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """A repeat batch with the same source_quote values must not duplicate rows."""
-    from app.memory.schemas import NewCommitment
-
     accession = "0000789019-26-000002"
     async with session_factory() as session:
         await _record_msft_filing(session, accession=accession)
         first_batch = [
             NewCommitment(
-                filing_accession=accession,
-                ticker="MSFT",
                 commitment_text="Expect double-digit revenue growth in Q3.",
                 target_period="Q3 FY26",
                 source_quote="We expect double-digit revenue growth in Q3.",
             ),
             NewCommitment(
-                filing_accession=accession,
-                ticker="MSFT",
                 commitment_text="Operating margin to expand 100 bps.",
                 target_period="FY26",
                 source_quote="Operating margin should expand by about 100 basis points.",
@@ -875,8 +870,6 @@ async def test_add_commitments_idempotent_on_source_quote(
         second_batch = [
             *first_batch,
             NewCommitment(
-                filing_accession=accession,
-                ticker="MSFT",
                 commitment_text="Capex to exceed $80B for FY26.",
                 target_period="FY26",
                 source_quote="We anticipate capex to exceed $80 billion this fiscal year.",
@@ -898,8 +891,6 @@ async def test_add_commitments_idempotent_on_source_quote(
 
     # Verify table state directly: exactly three rows for this filing, no duplicates.
     async with session_factory() as session:
-        from app.memory.models import Commitment
-
         rows = (
             await session.execute(
                 select(Commitment).where(Commitment.filing_accession == accession)
@@ -912,8 +903,6 @@ async def test_get_open_commitments_returns_only_open_and_filters_by_ticker(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """``get_open_commitments`` excludes closed rows AND rows for other tickers."""
-    from app.memory.schemas import CommitmentStatus, NewCommitment
-
     msft_accession = "0000789019-26-000003"
     nvda_accession = "0001045810-26-000003"
 
@@ -925,15 +914,11 @@ async def test_get_open_commitments_returns_only_open_and_filters_by_ticker(
             ticker="MSFT",
             commitments=[
                 NewCommitment(
-                    filing_accession=msft_accession,
-                    ticker="MSFT",
                     commitment_text="Open MSFT commitment 1.",
                     target_period="Q3",
                     source_quote="quote-msft-open-1",
                 ),
                 NewCommitment(
-                    filing_accession=msft_accession,
-                    ticker="MSFT",
                     commitment_text="MSFT commitment that will be marked met.",
                     target_period="Q3",
                     source_quote="quote-msft-met",
@@ -945,8 +930,6 @@ async def test_get_open_commitments_returns_only_open_and_filters_by_ticker(
             ticker="NVDA",
             commitments=[
                 NewCommitment(
-                    filing_accession=nvda_accession,
-                    ticker="NVDA",
                     commitment_text="Open NVDA commitment.",
                     target_period="Q2",
                     source_quote="quote-nvda-open",
@@ -978,8 +961,6 @@ async def test_update_commitment_status_atomically_updates_resolved_fields_and_u
     """``update_commitment_status`` rewrites all mutable fields plus ``updated_at``."""
     import asyncio
 
-    from app.memory.schemas import CommitmentStatus, NewCommitment
-
     open_accession = "0000789019-26-000004"
     resolving_accession = "0000789019-26-000005"
 
@@ -995,8 +976,6 @@ async def test_update_commitment_status_atomically_updates_resolved_fields_and_u
             ticker="MSFT",
             commitments=[
                 NewCommitment(
-                    filing_accession=open_accession,
-                    ticker="MSFT",
                     commitment_text="Guide raise next quarter.",
                     target_period="Q3 FY26",
                     source_quote="quote-update-target",
@@ -1022,8 +1001,6 @@ async def test_update_commitment_status_atomically_updates_resolved_fields_and_u
         await session.commit()
 
     async with session_factory() as session:
-        from app.memory.models import Commitment
-
         refreshed = await session.get(Commitment, target.id)
         assert refreshed is not None
         assert refreshed.status == CommitmentStatus.MET.value

@@ -383,7 +383,6 @@ class NewQAPair(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    filing_accession: str
     ordinal: int
     analyst_name: str | None
     question_text: str
@@ -417,8 +416,6 @@ class NewCommitment(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    filing_accession: str
-    ticker: str
     commitment_text: str
     target_period: str | None
     source_quote: str

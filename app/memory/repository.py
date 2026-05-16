@@ -617,7 +617,7 @@ class Repository:
         *,
         filing_accession: str,
         pairs: Sequence[NewQAPair],
-    ) -> list[QAPairRecord]:
+    ) -> Sequence[QAPairRecord]:
         """Bulk-insert Q&A pairs; idempotent on ``(filing_accession, ordinal)``.
 
         Uses ``ON CONFLICT DO NOTHING`` on the unique constraint so re-running
@@ -630,7 +630,7 @@ class Repository:
             return []
         payload = [
             {
-                "filing_accession": p.filing_accession,
+                "filing_accession": filing_accession,
                 "ordinal": p.ordinal,
                 "analyst_name": p.analyst_name,
                 "question_text": p.question_text,
@@ -660,7 +660,7 @@ class Repository:
 
     async def list_qa_pairs_for_filing(
         self, filing_accession: str
-    ) -> list[QAPairRecord]:
+    ) -> Sequence[QAPairRecord]:
         """Return Q&A pairs for ``filing_accession`` in ascending ordinal order."""
         stmt = (
             select(QAPair)
@@ -678,7 +678,7 @@ class Repository:
         filing_accession: str,
         ticker: str,
         commitments: Sequence[NewCommitment],
-    ) -> list[CommitmentRecord]:
+    ) -> Sequence[CommitmentRecord]:
         """Bulk-insert commitments; idempotent on ``(filing_accession, source_quote)``.
 
         The schema has no UNIQUE constraint covering this pair (the source
@@ -706,8 +706,8 @@ class Repository:
         if to_insert:
             payload = [
                 {
-                    "filing_accession": c.filing_accession,
-                    "ticker": c.ticker,
+                    "filing_accession": filing_accession,
+                    "ticker": ticker,
                     "commitment_text": c.commitment_text,
                     "target_period": c.target_period,
                     "source_quote": c.source_quote,
@@ -725,7 +725,7 @@ class Repository:
         result = await self._session.execute(select_stmt)
         return [CommitmentRecord.model_validate(row) for row in result.scalars().all()]
 
-    async def get_open_commitments(self, ticker: str) -> list[CommitmentRecord]:
+    async def get_open_commitments(self, ticker: str) -> Sequence[CommitmentRecord]:
         """Return ``status='open'`` commitments for ``ticker``, oldest first.
 
         The cross-quarter reconciliation pass uses this to find prior
