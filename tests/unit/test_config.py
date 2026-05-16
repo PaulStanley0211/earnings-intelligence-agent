@@ -84,3 +84,28 @@ def test_settings_default_embeddings_model(monkeypatch: pytest.MonkeyPatch) -> N
     reset_settings_cache()
     s = Settings()  # type: ignore[call-arg]
     assert s.embeddings_model == "text-embedding-3-small"
+
+
+def test_settings_default_watcher_disabled(
+    fresh_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``watcher_mode_enabled`` defaults to False so production runs upload-only."""
+    monkeypatch.delenv("WATCHER_MODE_ENABLED", raising=False)
+    reset_settings_cache()
+    assert Settings().watcher_mode_enabled is False  # type: ignore[call-arg]
+
+
+def test_settings_watcher_can_be_enabled(
+    fresh_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATCHER_MODE_ENABLED", "true")
+    reset_settings_cache()
+    assert Settings().watcher_mode_enabled is True  # type: ignore[call-arg]
+
+
+def test_settings_max_upload_bytes_default(
+    fresh_settings: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("MAX_UPLOAD_BYTES", raising=False)
+    reset_settings_cache()
+    assert Settings().max_upload_bytes == 26_214_400  # type: ignore[call-arg]
