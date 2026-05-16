@@ -56,3 +56,8 @@ migrations/versions/__pycache__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Phase 4 sample PDFs — large SEC filings, fetch on demand from EDGAR
+# (small 8-Ks in this directory ARE tracked; see the README)
+tests/fixtures/uploaded_pdfs/0000950170-25-100235.pdf
+tests/fixtures/uploaded_pdfs/0001193125-26-027207.pdf

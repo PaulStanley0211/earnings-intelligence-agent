@@ -1,14 +1,18 @@
 # Earnings Intelligence Agent
 
-Autonomous multi-agent system that produces a fact-checked equity research note within ~15 minutes of an SEC earnings filing. See [`PLAN.md`](PLAN.md) for full scope and [`CLAUDE.md`](CLAUDE.md) for development conventions.
+A multi-agent equity-research assistant. Pick a US-listed ticker; the agent uses a live SEC EDGAR query to tell you exactly which documents to upload and where to download each from; you upload them; a coordinated multi-agent pipeline (financial extractor, comparator, language differ, transcript analyzer, synthesizer, deterministic critic) produces a structured analysis; and a citation-enforced chat surface lets you ask follow-up questions.
+
+The same pipeline runs autonomously against a fixed eval-set of tickers in an opt-in "eval / demo" mode, preserving the property that the system can deliver a research note within 15 minutes of an EDGAR filing — verified nightly.
+
+See [`PLAN.md`](PLAN.md) for the full seven-phase build plan and acceptance gates. See [`docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md`](docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md) for the design rationale. See [`CLAUDE.md`](CLAUDE.md) for development conventions.
 
 ## Status
 
-Phase 0 (bootstrap) in progress.
+Phases 0-3 complete (foundation, numbers track, language differ). Phase 4 (upload intake + transcript analyzer) starting under the upload-first design.
 
 ## Local development
 
-Prerequisites: Python 3.11+, `uv`, Docker Desktop, an Anthropic API key, a Finnhub API key.
+Prerequisites: Python 3.11+, `uv`, Docker Desktop, an Anthropic API key, an OpenAI API key (for embeddings), a Finnhub API key.
 
 ```bash
 # Install dependencies into .venv

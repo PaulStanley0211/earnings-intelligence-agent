@@ -42,7 +42,7 @@ _STATUS_ERROR: Final[str] = "error"
 _POLL_FRESHNESS_THRESHOLD: Final[timedelta] = timedelta(minutes=5)
 
 
-CheckStatus = Literal["ok", "stale", "unknown", "error"]
+CheckStatus = Literal["ok", "stale", "unknown", "error", "not_applicable"]
 
 
 class HealthChecks(BaseModel):
@@ -127,6 +127,10 @@ async def _check_redis(details: HealthDetails) -> CheckStatus:
 
 
 async def _check_watcher(details: HealthDetails) -> CheckStatus:
+    from app.config import get_settings
+
+    if not get_settings().watcher_mode_enabled:
+        return "not_applicable"
     try:
         engine = get_engine()
         async with AsyncSession(engine, expire_on_commit=False) as session:

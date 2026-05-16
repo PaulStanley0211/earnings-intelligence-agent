@@ -88,11 +88,23 @@ class Settings(BaseSettings):
         le=3600,
         description="How often the watcher polls EDGAR for new filings.",
     )
+    watcher_mode_enabled: bool = Field(
+        default=False,
+        description=(
+            "Opt-in flag for the eval/demo EDGAR watcher. The upload-first product "
+            "runs with this off; turn on for nightly evals or demo recordings."
+        ),
+    )
 
     # ---- Runtime ----
     log_level: LogLevel = Field(default="INFO", description="Loguru log level.")
     environment: Environment = Field(
         default=Environment.DEV, description="Runtime environment selector."
+    )
+    max_upload_bytes: int = Field(
+        default=26_214_400,
+        gt=0,
+        description="Hard upper bound on /api/upload payload size. Default 25 MiB.",
     )
 
     # ---- Optional delivery ----

@@ -41,6 +41,24 @@ _SUPPORTED_FORMS: Final[frozenset[str]] = frozenset(
 )
 
 
+class WatcherDisabledError(RuntimeError):
+    """Raised when ``watch_forever`` runs while ``watcher_mode_enabled`` is False.
+
+    The upload-first product runs with the watcher off by default; enabling
+    it is an explicit operator choice (eval/demo mode). Refusing to start
+    prevents accidental EDGAR polling in production.
+    """
+
+
+def ensure_watcher_enabled(*, enabled: bool) -> None:
+    """Raise :class:`WatcherDisabledError` if ``enabled`` is ``False``."""
+    if not enabled:
+        raise WatcherDisabledError(
+            "Watcher mode is disabled. Set WATCHER_MODE_ENABLED=true to run "
+            "the EDGAR watcher (eval/demo mode)."
+        )
+
+
 class _SupportsEdgar(Protocol):
     """Subset of :class:`~app.tools.edgar.EdgarClient` the watcher consumes."""
 
@@ -207,6 +225,7 @@ async def watch_forever(*, interval_seconds: int | None = None) -> None:
     so logs and OpenTelemetry spans can be grouped per poll.
     """
     settings = get_settings()
+    ensure_watcher_enabled(enabled=settings.watcher_mode_enabled)
     cadence = interval_seconds or settings.edgar_poll_interval_seconds
     async with EdgarClient(user_agent=settings.edgar_user_agent) as edgar:
         while True:

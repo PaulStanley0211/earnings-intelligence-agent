@@ -1,6 +1,8 @@
 # Earnings Intelligence Agent
 
-Autonomous multi-agent system that produces a fact-checked equity research note within ~15 minutes of an SEC earnings filing. Watches EDGAR for 10-Q/8-K filings on a configurable watchlist, parses filings, diffs language against prior quarters, analyzes earnings-call transcripts, and synthesizes a structured note delivered to email, Slack, or a dashboard. Coordinated through LangGraph on public data only.
+Multi-agent equity-research assistant. Users pick a US ticker; the agent uses a live EDGAR query to tell them which SEC documents to upload and where to download each from; the user uploads; the same multi-agent pipeline (financial extractor, comparator, language differ, transcript analyzer, synthesizer, deterministic critic) runs over the upload; a citation-enforced chat surface lets the user query the resulting structured analysis. The autonomous EDGAR watcher built in Phase 1 survives as an opt-in eval / demo mode that preserves the "research note within 15 minutes of a filing" claim as a quantitative property verified nightly against a fixed eval set. Coordinated through LangGraph on public data only.
+
+The product direction is locked in the upload-first design spec at [`docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md`](docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md). Read it before touching Phase 4+ scope.
 
 ## Status
 
@@ -13,6 +15,10 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 **Phase 2 — Numbers track: complete** (2026-05-15).
 
 **Phase 3 — Language differ: complete** (commit `ad3b159`, 2026-05-16).
+
+**Phase 4A — Upload infrastructure: complete** (commit `4978f2a`, 2026-05-16).
+
+**Phase 4 — Upload intake + transcript analyzer: in progress** (2026-05-16 onward, executing under the upload-first pivot design spec). Old Phase 4 scope (third-party transcript scraping) was scrapped in favor of user-supplied transcripts + a document-advisor agent that uses the Phase 1 EDGAR client to tell users exactly which filings to fetch.
 
 In place from Phase 0:
 - uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
@@ -62,10 +68,20 @@ Added in Phase 3:
 
 Gate evidence at Phase 3 close: ruff clean, mypy clean (38+ source files), all unit + integration tests green, `coverage report` line coverage >= 85 percent. `pip-audit` reports no known vulnerabilities.
 
+Added in Phase 4A:
+- **Document parser** at [`app/tools/documents.py`](app/tools/documents.py) — PDF + plain-text intake, scanned-PDF rejection, SHA-256 content hashing.
+- **EDGAR advisor** at [`app/tools/advisor.py`](app/tools/advisor.py) plus the agent wrapper at [`app/agents/document_advisor.py`](app/agents/document_advisor.py).
+- **Upload intake node** at [`app/agents/upload_intake.py`](app/agents/upload_intake.py) — idempotent on SHA-256 even under concurrent-insert races; emits `FilingEvent` with `source=FilingEventSource.UPLOAD`.
+- **API routes**: `POST /api/advise` returns the upload checklist, `POST /api/upload` runs the full Phase 1-3 pipeline on the uploaded PDF/text and returns the structured analysis, `POST /api/chat` reserved with a 501 stub for Phase 6.
+- **Watcher gated** behind `WATCHER_MODE_ENABLED` (default `false`); `/health` reports `edgar_watcher` as `not_applicable` when the flag is off.
+- **Migration** `0004_phase4a_uploaded_documents` adds the append-only `uploaded_documents` table with SHA-256 dedupe.
+- **Graceful shutdown**: `app/main.py`'s lifespan now closes the singleton EDGAR + Finnhub httpx clients on shutdown via `shutdown_compiled_graph()`.
+- **Sample fixtures**: MSFT 8-Ks at [`tests/fixtures/uploaded_pdfs/`](tests/fixtures/uploaded_pdfs/).
+
+Gate evidence at Phase 4A close: ruff clean, mypy clean (46 source files), 208 unit tests + 47 integration tests green (modulo the pre-existing `test_missing_anthropic_key_raises` env-leak flake), `coverage report` line coverage 88.15 percent. `pip-audit` reports no known vulnerabilities.
+
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `evals/`.
-
-**Phase 4 — not started.**
 
 ## Tech stack
 
@@ -79,14 +95,14 @@ Empty stubs still awaiting later phases — do not assume contents exist:
 
 ## When you start work
 
-Read [`PLAN.md`](PLAN.md) first. Then consult:
+Read [`PLAN.md`](PLAN.md) first, then the upload-first design spec at [`docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md`](docs/superpowers/specs/2026-05-16-upload-first-pivot-design.md) — that locks in the Phase 4+ direction. Then consult:
 
 - `app/graph.py` — compiled LangGraph and orchestration entry point
 - `app/agents/` — node implementations per specialist
 - `app/models/state.py` — `AgentState` contract between nodes
 - `app/llm/client.py` — single LLM client (traced, cached, cassette-replay)
 - `prompts/` — versioned prompt templates
-- `tests/fixtures/` — golden filings, transcripts, recorded LLM cassettes
+- `tests/fixtures/` — golden filings, transcripts, recorded LLM cassettes, sample uploaded PDFs (see `tests/fixtures/uploaded_pdfs/README.md`)
 - `docs/runbook.md` — failure recovery playbook
 
 ## Common commands
@@ -131,17 +147,19 @@ uv run python -m app.scripts.backfill_language --quarters 4
 - **Agent nodes are pure functions of `AgentState`.** Side effects only through `app/memory/` or `app/tools/`.
 - **All LLM calls go through `app/llm/client.py`** — it traces, caches, enforces the daily cost cap, and supports cassette replay for tests. Never import the Anthropic SDK elsewhere.
 - **Database access through `app/memory/` only.** Parameterized queries; no raw SQL in agent code.
-- **Memory is append-only** for filings, transcripts, and notes. Only `commitments.status` is mutable (open → met / missed).
+- **Memory is append-only** for filings, transcripts, notes, and uploaded documents. Only `commitments.status` is mutable (open → met / missed).
 - **The critic runs on every synthesizer output.** No bypass path.
 - **EDGAR client sends `User-Agent`** with contact email — SEC policy. Missing → startup fails fast.
-- **Prompt injection defense.** External content (filings, transcripts) is wrapped in `<source>` tags; system prompts instruct the model to treat that content as data, not instructions.
+- **Prompt injection defense.** External content (filings, transcripts, uploaded documents) is wrapped in `<source>` tags; system prompts instruct the model to treat that content as data, not instructions.
 - **Cost guard.** The LLM client enforces `MAX_DAILY_LLM_COST_USD` as a daily cap. Exceeded → calls fail closed.
+- **Upload safety.** `POST /api/upload` accepts only `application/pdf` and `text/plain`, enforces a hard size cap, validates magic bytes, and rejects scanned PDFs with zero extractable characters via a clean error before invoking the pipeline.
+- **Watcher mode is opt-in.** The Phase 1 EDGAR watcher only runs when `WATCHER_MODE_ENABLED=true`. It exists to feed `evals/`, not as the primary user-facing flow.
 
 ## Required environment variables
 
 `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `EDGAR_USER_AGENT` (format: `"<name> <email>"`), `MAX_DAILY_LLM_COST_USD`, `LOG_LEVEL`, `ENVIRONMENT` (dev/staging/prod), `LLM_CACHE_DIR`, `EDGAR_POLL_INTERVAL_SECONDS`.
 
-Optional: `EMBEDDINGS_MODEL` (defaults to `text-embedding-3-small`).
+Optional: `EMBEDDINGS_MODEL` (defaults to `text-embedding-3-small`), `WATCHER_MODE_ENABLED` (defaults to `false`; set `true` to enable the eval-mode EDGAR watcher), `MAX_UPLOAD_BYTES` (defaults to 25 MB).
 
 Optional delivery: `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS`, `SLACK_WEBHOOK_URL`.
 

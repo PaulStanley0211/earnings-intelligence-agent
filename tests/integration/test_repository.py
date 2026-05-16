@@ -684,3 +684,60 @@ async def test_list_language_diffs_for_filing_returns_inserted_rows(
         assert rows[0].change_type == ChangeType.ADDED
         assert rows[0].severity == Severity.MAJOR
         assert rows[0].filing_accession == accession
+
+
+# ---- Phase 4A: uploaded_documents ----
+
+
+async def test_add_and_fetch_uploaded_document(session: AsyncSession) -> None:
+    """An uploaded document round-trips through the repository methods."""
+    from app.memory.schemas import NewUploadedDocument
+    repo = Repository(session)
+
+    new = NewUploadedDocument(
+        upload_id="upload-test-001",
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="msft-8k-q2.pdf",
+        content_sha256="a" * 64,
+        parsed_text="Microsoft reported revenue of $XX billion.",
+        parsed_char_count=42,
+        page_count=14,
+    )
+    stored = await repo.add_uploaded_document(new)
+    await session.commit()
+    assert stored.upload_id == "upload-test-001"
+    assert stored.ticker == "MSFT"
+
+    by_sha = await repo.get_uploaded_document_by_sha256("a" * 64)
+    assert by_sha is not None
+    assert by_sha.original_filename == "msft-8k-q2.pdf"
+
+    by_id = await repo.get_uploaded_document("upload-test-001")
+    assert by_id is not None
+    assert by_id.parsed_char_count == 42
+
+
+async def test_uploaded_document_sha256_unique(session: AsyncSession) -> None:
+    """Re-uploading the same content (same sha256) violates the unique index."""
+    import sqlalchemy.exc
+
+    from app.memory.schemas import NewUploadedDocument
+    repo = Repository(session)
+
+    base = NewUploadedDocument(
+        upload_id="upload-a",
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="a.pdf",
+        content_sha256="b" * 64,
+        parsed_text="hi",
+        parsed_char_count=2,
+        page_count=1,
+    )
+    await repo.add_uploaded_document(base)
+    await session.commit()
+
+    duplicate = base.model_copy(update={"upload_id": "upload-b"})
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        await repo.add_uploaded_document(duplicate)

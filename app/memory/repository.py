@@ -30,6 +30,7 @@ from app.memory.models import (
     FilingSection,
     FinancialFact,
     LanguageDiff,
+    UploadedDocument,
     WatchlistEntry,
 )
 from app.memory.schemas import (
@@ -47,9 +48,11 @@ from app.memory.schemas import (
     NewFinancialFact,
     NewLanguageDiff,
     NewPollLog,
+    NewUploadedDocument,
     PollLogRecord,
     PollStatus,
     SectionKind,
+    UploadedDocumentRecord,
     WatchlistRecord,
 )
 
@@ -99,6 +102,14 @@ class Repository:
         )
         result = await self._session.execute(stmt)
         return [WatchlistRecord.model_validate(row) for row in result.scalars().all()]
+
+    async def get_watchlist_entry_by_ticker(
+        self, ticker: str
+    ) -> WatchlistRecord | None:
+        """Return the watchlist entry whose ticker matches (case-insensitive), or None."""
+        stmt = select(WatchlistEntry).where(WatchlistEntry.ticker == ticker.upper())
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        return WatchlistRecord.model_validate(row) if row is not None else None
 
     # ---- filings ----
 
@@ -549,3 +560,45 @@ class Repository:
         return [
             LanguageDiffRecord.model_validate(row) for row in result.scalars().all()
         ]
+
+    # ---- uploaded documents ----
+
+    async def add_uploaded_document(
+        self, new: NewUploadedDocument
+    ) -> UploadedDocumentRecord:
+        """Insert a new ``uploaded_documents`` row and return its detached record.
+
+        Callers commit. Re-inserting the same ``content_sha256`` raises
+        ``sqlalchemy.exc.IntegrityError`` on flush.
+        """
+        row = UploadedDocument(
+            upload_id=new.upload_id,
+            ticker=new.ticker,
+            filing_type=new.filing_type,
+            original_filename=new.original_filename,
+            content_sha256=new.content_sha256,
+            parsed_text=new.parsed_text,
+            parsed_char_count=new.parsed_char_count,
+            page_count=new.page_count,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return UploadedDocumentRecord.model_validate(row)
+
+    async def get_uploaded_document_by_sha256(
+        self, content_sha256: str
+    ) -> UploadedDocumentRecord | None:
+        """Return the document with the given content hash, or ``None``."""
+        stmt = select(UploadedDocument).where(
+            UploadedDocument.content_sha256 == content_sha256
+        )
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        return UploadedDocumentRecord.model_validate(row) if row is not None else None
+
+    async def get_uploaded_document(
+        self, upload_id: str
+    ) -> UploadedDocumentRecord | None:
+        """Return the document with the given ``upload_id``, or ``None``."""
+        stmt = select(UploadedDocument).where(UploadedDocument.upload_id == upload_id)
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
+        return UploadedDocumentRecord.model_validate(row) if row is not None else None

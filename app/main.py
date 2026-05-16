@@ -1,11 +1,14 @@
 """FastAPI application entry point.
 
-Wires the API router, configures structured logging and tracing, and exposes
-the resulting ``app`` for Uvicorn (``uvicorn app.main:app``).
+Wires the API surface (health, advise, upload, chat) and the application
+lifespan. On startup the lifespan configures structured logging and tracing;
+on shutdown it drains the singleton compiled graph (closing its EDGAR /
+Finnhub httpx clients) and disposes the database engine and Redis pool so a
+graceful restart leaves no in-flight connections behind.
 
-The agent graph itself is wired in by Phase 1; this module's only job in
-Phase 0 is to give Docker something to serve so the deployment topology can be
-validated end-to-end.
+The compiled LangGraph (Phase 1-3 pipeline) is built lazily on first
+request via :func:`app.api.dependencies.get_compiled_graph`; this module
+only owns the lifecycle hooks, not the graph itself.
 """
 
 from __future__ import annotations
@@ -16,7 +19,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
+from app.api.advise import router as advise_router
+from app.api.chat import router as chat_router
 from app.api.health import router as health_router
+from app.api.upload import router as upload_router
 from app.config import get_settings
 from app.observability.logging import configure_logging, get_logger
 from app.observability.tracing import configure_tracing
@@ -34,9 +40,11 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        from app.api.dependencies import shutdown_compiled_graph
         from app.memory.db import dispose_engine
         from app.memory.redis_client import dispose_redis
 
+        await shutdown_compiled_graph()
         await dispose_engine()
         await dispose_redis()
         get_logger().info("app_shutdown")
@@ -54,6 +62,9 @@ def create_app() -> FastAPI:
         lifespan=_lifespan,
     )
     app.include_router(health_router)
+    app.include_router(advise_router)
+    app.include_router(upload_router)
+    app.include_router(chat_router)
     return app
 
 

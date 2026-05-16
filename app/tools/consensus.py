@@ -82,6 +82,22 @@ class ConsensusFetcher:
         self._finnhub = finnhub
         self._yfinance = yfinance
 
+    async def aclose(self) -> None:
+        """Close any provider that owns a long-lived httpx client.
+
+        The fetcher is used as a process-wide singleton by
+        ``app.api.dependencies.get_compiled_graph``; the FastAPI lifespan
+        shutdown calls this so the EDGAR / Finnhub connection pools are
+        drained cleanly on graceful restart.
+        """
+        aclose = getattr(self._finnhub, "aclose", None)
+        if callable(aclose):
+            await aclose()
+        if self._yfinance is not None:
+            yaclose = getattr(self._yfinance, "aclose", None)
+            if callable(yaclose):
+                await yaclose()
+
     async def fetch(
         self,
         *,

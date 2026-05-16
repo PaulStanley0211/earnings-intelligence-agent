@@ -53,7 +53,14 @@ async def _seed_poll_log(*, polled_at: datetime, status: str) -> None:
         await session.commit()
 
 
-async def test_health_returns_ok_when_recent_poll_exists(fresh_schema: None) -> None:
+async def test_health_returns_ok_when_recent_poll_exists(
+    fresh_schema: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATCHER_MODE_ENABLED", "true")
+    from app.config import reset_settings_cache
+
+    reset_settings_cache()
+
     await _seed_poll_log(polled_at=datetime.now(UTC), status="ok")
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -66,7 +73,14 @@ async def test_health_returns_ok_when_recent_poll_exists(fresh_schema: None) -> 
     assert body["checks"]["edgar_watcher"] == "ok"
 
 
-async def test_health_reports_stale_poll_as_degraded(fresh_schema: None) -> None:
+async def test_health_reports_stale_poll_as_degraded(
+    fresh_schema: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATCHER_MODE_ENABLED", "true")
+    from app.config import reset_settings_cache
+
+    reset_settings_cache()
+
     await _seed_poll_log(
         polled_at=datetime.now(UTC) - timedelta(minutes=10),
         status="ok",
@@ -82,7 +96,14 @@ async def test_health_reports_stale_poll_as_degraded(fresh_schema: None) -> None
     assert body["checks"]["edgar_watcher"] == "stale"
 
 
-async def test_health_marks_watcher_unknown_when_never_polled(fresh_schema: None) -> None:
+async def test_health_marks_watcher_unknown_when_never_polled(
+    fresh_schema: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("WATCHER_MODE_ENABLED", "true")
+    from app.config import reset_settings_cache
+
+    reset_settings_cache()
+
     transport = ASGITransport(app=create_app())
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
@@ -104,3 +125,25 @@ async def test_health_database_check_executes_a_real_query(fresh_schema: None) -
         response = await client.get("/health")
     assert response.status_code == 200
     assert response.json()["checks"]["database"] == "ok"
+
+
+async def test_health_reports_not_applicable_when_watcher_disabled(
+    fresh_schema: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With watcher mode off, the watcher freshness check is informational only."""
+    monkeypatch.setenv("WATCHER_MODE_ENABLED", "false")
+    from app.config import reset_settings_cache
+
+    reset_settings_cache()
+
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["checks"]["edgar_watcher"] == "not_applicable"
+    # Overall status MUST NOT be degraded due to the watcher being intentionally off.
+    if payload["status"] == "degraded":
+        # Any 'degraded' must come from db or redis, NOT the watcher.
+        assert payload["checks"]["edgar_watcher"] != "stale"
+        assert payload["checks"]["edgar_watcher"] != "unknown"
