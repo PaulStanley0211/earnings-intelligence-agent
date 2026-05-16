@@ -28,6 +28,13 @@ class FilingForm(StrEnum):
     FORM_8K = "8-K"
 
 
+class FilingEventSource(StrEnum):
+    """Where a :class:`FilingEvent` originated."""
+
+    WATCHER = "watcher"
+    UPLOAD = "upload"
+
+
 class FilingEvent(BaseModel):
     """The triggering filing for an agent run.
 
@@ -42,6 +49,10 @@ class FilingEvent(BaseModel):
     form: FilingForm
     filed_at: datetime
     source_url: str = Field(..., description="EDGAR URL of the filing index.")
+    source: FilingEventSource = Field(
+        default=FilingEventSource.WATCHER,
+        description="Whether this event came from the EDGAR watcher or a user upload.",
+    )
 
 
 class CriticVerdict(StrEnum):

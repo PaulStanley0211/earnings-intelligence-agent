@@ -103,3 +103,37 @@ def test_language_differ_owns_language_diffs() -> None:
 def test_language_differ_cannot_mutate_comparisons() -> None:
     with pytest.raises(ValidationError):
         StateUpdate(owner="language_differ", changes={"comparisons": {}})
+
+
+def test_filing_event_defaults_to_watcher_source() -> None:
+    """Existing code that builds FilingEvent without ``source`` keeps working."""
+    from datetime import UTC, datetime
+
+    from app.models.state import FilingEvent, FilingEventSource, FilingForm
+
+    event = FilingEvent(
+        accession_number="0001193125-26-027198",
+        cik="0000789019",
+        ticker="MSFT",
+        form=FilingForm.FORM_8K,
+        filed_at=datetime(2026, 1, 28, tzinfo=UTC),
+        source_url="https://example.com",
+    )
+    assert event.source is FilingEventSource.WATCHER
+
+
+def test_filing_event_accepts_upload_source() -> None:
+    from datetime import UTC, datetime
+
+    from app.models.state import FilingEvent, FilingEventSource, FilingForm
+
+    event = FilingEvent(
+        accession_number="upload-001",
+        cik="0000789019",
+        ticker="MSFT",
+        form=FilingForm.FORM_8K,
+        filed_at=datetime(2026, 1, 28, tzinfo=UTC),
+        source_url="https://example.com",
+        source=FilingEventSource.UPLOAD,
+    )
+    assert event.source is FilingEventSource.UPLOAD
