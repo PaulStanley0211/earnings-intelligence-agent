@@ -352,3 +352,91 @@ class UploadedDocumentRecord(BaseModel):
     parsed_char_count: int
     page_count: int | None
     uploaded_at: datetime
+
+
+# ---- Phase 4B: transcript Q&A pairs and management commitments ----
+
+
+class AnswerClass(StrEnum):
+    """Classification the analyzer assigns to a Q&A answer's directness."""
+
+    DIRECT = "direct"
+    PARTIAL = "partial"
+    DEFLECTED = "deflected"
+
+
+class CommitmentStatus(StrEnum):
+    """Lifecycle states for a :class:`~app.memory.models.Commitment` row.
+
+    Commitments are inserted as ``OPEN`` and only the reconciliation pass
+    flips them to ``MET`` / ``MISSED`` / ``STILL_OPEN``.
+    """
+
+    OPEN = "open"
+    MET = "met"
+    MISSED = "missed"
+    STILL_OPEN = "still_open"
+
+
+class NewQAPair(BaseModel):
+    """Inputs to :meth:`Repository.add_qa_pairs`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    ordinal: int
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: AnswerClass
+    sha256_text: str = Field(..., min_length=64, max_length=64)
+
+
+class QAPairRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.QAPair` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    ordinal: int
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: AnswerClass
+    sha256_text: str
+    created_at: datetime
+
+
+class NewCommitment(BaseModel):
+    """Inputs to :meth:`Repository.add_commitments`.
+
+    ``status`` is intentionally omitted - the DB column defaults to ``open``
+    so freshly-extracted commitments enter the open queue automatically.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    ticker: str
+    commitment_text: str
+    target_period: str | None
+    source_quote: str
+
+
+class CommitmentRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.Commitment` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    ticker: str
+    commitment_text: str
+    target_period: str | None
+    source_quote: str
+    status: CommitmentStatus
+    resolved_filing_accession: str | None
+    resolved_reason: str | None
+    created_at: datetime
+    updated_at: datetime

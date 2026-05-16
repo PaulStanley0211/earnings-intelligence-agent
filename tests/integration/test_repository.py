@@ -741,3 +741,292 @@ async def test_uploaded_document_sha256_unique(session: AsyncSession) -> None:
     duplicate = base.model_copy(update={"upload_id": "upload-b"})
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         await repo.add_uploaded_document(duplicate)
+
+
+# ---- Phase 4B: qa_pairs and commitments ----
+
+
+async def _record_msft_filing(
+    session: AsyncSession,
+    *,
+    accession: str = "0000789019-26-000001",
+    filed_at: datetime | None = None,
+) -> None:
+    """Record a synthetic MSFT 10-Q filing so the FK target exists."""
+    await Repository(session).record_filing(
+        filing=NewFiling(
+            accession_number=accession,
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=filed_at or datetime(2026, 4, 25, 20, 5, tzinfo=UTC),
+            source_url=f"https://www.sec.gov/Archives/edgar/data/789019/{accession}-index.htm",
+        )
+    )
+
+
+async def _record_nvda_filing(
+    session: AsyncSession,
+    *,
+    accession: str = "0001045810-26-000001",
+) -> None:
+    """Record a synthetic NVDA 10-Q filing so the FK target exists."""
+    await Repository(session).record_filing(
+        filing=NewFiling(
+            accession_number=accession,
+            cik="0001045810",
+            ticker="NVDA",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2026, 5, 21, 20, 5, tzinfo=UTC),
+            source_url=(
+                f"https://www.sec.gov/Archives/edgar/data/1045810/{accession}-index.htm"
+            ),
+        )
+    )
+
+
+async def test_add_qa_pairs_idempotent_on_filing_accession_ordinal(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Re-inserting the same (filing_accession, ordinal) tuples is a no-op."""
+    from app.memory.schemas import AnswerClass, NewQAPair
+
+    accession = "0000789019-26-000001"
+    async with session_factory() as session:
+        await _record_msft_filing(session, accession=accession)
+        first_batch = [
+            NewQAPair(
+                filing_accession=accession,
+                ordinal=i,
+                analyst_name=f"Analyst {i}",
+                question_text=f"Question {i}?",
+                answer_text=f"Answer {i}.",
+                answer_class=AnswerClass.DIRECT,
+                sha256_text=f"{i:064d}",
+            )
+            for i in range(1, 4)
+        ]
+        first = await Repository(session).add_qa_pairs(
+            filing_accession=accession, pairs=first_batch
+        )
+        await session.commit()
+        assert len(first) == 3
+
+    async with session_factory() as session:
+        second_batch = [
+            *first_batch,
+            NewQAPair(
+                filing_accession=accession,
+                ordinal=4,
+                analyst_name="Analyst 4",
+                question_text="Question 4?",
+                answer_text="Answer 4.",
+                answer_class=AnswerClass.PARTIAL,
+                sha256_text=f"{4:064d}",
+            ),
+        ]
+        second = await Repository(session).add_qa_pairs(
+            filing_accession=accession, pairs=second_batch
+        )
+        await session.commit()
+        # The follow-up SELECT must surface all four ordinals once each.
+        assert {p.ordinal for p in second} == {1, 2, 3, 4}
+
+    async with session_factory() as session:
+        listed = await Repository(session).list_qa_pairs_for_filing(accession)
+        assert [p.ordinal for p in listed] == [1, 2, 3, 4]
+        assert listed[3].answer_class == AnswerClass.PARTIAL
+
+
+async def test_add_commitments_idempotent_on_source_quote(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """A repeat batch with the same source_quote values must not duplicate rows."""
+    from app.memory.schemas import NewCommitment
+
+    accession = "0000789019-26-000002"
+    async with session_factory() as session:
+        await _record_msft_filing(session, accession=accession)
+        first_batch = [
+            NewCommitment(
+                filing_accession=accession,
+                ticker="MSFT",
+                commitment_text="Expect double-digit revenue growth in Q3.",
+                target_period="Q3 FY26",
+                source_quote="We expect double-digit revenue growth in Q3.",
+            ),
+            NewCommitment(
+                filing_accession=accession,
+                ticker="MSFT",
+                commitment_text="Operating margin to expand 100 bps.",
+                target_period="FY26",
+                source_quote="Operating margin should expand by about 100 basis points.",
+            ),
+        ]
+        first = await Repository(session).add_commitments(
+            filing_accession=accession,
+            ticker="MSFT",
+            commitments=first_batch,
+        )
+        await session.commit()
+        assert len(first) == 2
+
+    async with session_factory() as session:
+        second_batch = [
+            *first_batch,
+            NewCommitment(
+                filing_accession=accession,
+                ticker="MSFT",
+                commitment_text="Capex to exceed $80B for FY26.",
+                target_period="FY26",
+                source_quote="We anticipate capex to exceed $80 billion this fiscal year.",
+            ),
+        ]
+        second = await Repository(session).add_commitments(
+            filing_accession=accession,
+            ticker="MSFT",
+            commitments=second_batch,
+        )
+        await session.commit()
+        assert len(second) == 3, "all three rows present, none duplicated"
+        # The set of returned source_quotes covers the full input batch.
+        assert {c.source_quote for c in second} == {
+            "We expect double-digit revenue growth in Q3.",
+            "Operating margin should expand by about 100 basis points.",
+            "We anticipate capex to exceed $80 billion this fiscal year.",
+        }
+
+    # Verify table state directly: exactly three rows for this filing, no duplicates.
+    async with session_factory() as session:
+        from app.memory.models import Commitment
+
+        rows = (
+            await session.execute(
+                select(Commitment).where(Commitment.filing_accession == accession)
+            )
+        ).scalars().all()
+        assert len(rows) == 3
+
+
+async def test_get_open_commitments_returns_only_open_and_filters_by_ticker(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """``get_open_commitments`` excludes closed rows AND rows for other tickers."""
+    from app.memory.schemas import CommitmentStatus, NewCommitment
+
+    msft_accession = "0000789019-26-000003"
+    nvda_accession = "0001045810-26-000003"
+
+    async with session_factory() as session:
+        await _record_msft_filing(session, accession=msft_accession)
+        await _record_nvda_filing(session, accession=nvda_accession)
+        msft_rows = await Repository(session).add_commitments(
+            filing_accession=msft_accession,
+            ticker="MSFT",
+            commitments=[
+                NewCommitment(
+                    filing_accession=msft_accession,
+                    ticker="MSFT",
+                    commitment_text="Open MSFT commitment 1.",
+                    target_period="Q3",
+                    source_quote="quote-msft-open-1",
+                ),
+                NewCommitment(
+                    filing_accession=msft_accession,
+                    ticker="MSFT",
+                    commitment_text="MSFT commitment that will be marked met.",
+                    target_period="Q3",
+                    source_quote="quote-msft-met",
+                ),
+            ],
+        )
+        await Repository(session).add_commitments(
+            filing_accession=nvda_accession,
+            ticker="NVDA",
+            commitments=[
+                NewCommitment(
+                    filing_accession=nvda_accession,
+                    ticker="NVDA",
+                    commitment_text="Open NVDA commitment.",
+                    target_period="Q2",
+                    source_quote="quote-nvda-open",
+                ),
+            ],
+        )
+        # Resolve one MSFT commitment so it is no longer open.
+        to_close = next(c for c in msft_rows if c.source_quote == "quote-msft-met")
+        await Repository(session).update_commitment_status(
+            commitment_id=to_close.id,
+            status=CommitmentStatus.MET,
+            resolved_filing_accession=msft_accession,
+            resolved_reason="reported result matched the guidance band",
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        open_msft = await Repository(session).get_open_commitments("MSFT")
+        assert len(open_msft) == 1
+        assert open_msft[0].source_quote == "quote-msft-open-1"
+        assert open_msft[0].status == CommitmentStatus.OPEN
+        # No NVDA rows must leak through the MSFT filter.
+        assert all(row.ticker == "MSFT" for row in open_msft)
+
+
+async def test_update_commitment_status_atomically_updates_resolved_fields_and_updated_at(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """``update_commitment_status`` rewrites all mutable fields plus ``updated_at``."""
+    import asyncio
+
+    from app.memory.schemas import CommitmentStatus, NewCommitment
+
+    open_accession = "0000789019-26-000004"
+    resolving_accession = "0000789019-26-000005"
+
+    async with session_factory() as session:
+        await _record_msft_filing(session, accession=open_accession)
+        await _record_msft_filing(
+            session,
+            accession=resolving_accession,
+            filed_at=datetime(2026, 7, 25, 20, 5, tzinfo=UTC),
+        )
+        rows = await Repository(session).add_commitments(
+            filing_accession=open_accession,
+            ticker="MSFT",
+            commitments=[
+                NewCommitment(
+                    filing_accession=open_accession,
+                    ticker="MSFT",
+                    commitment_text="Guide raise next quarter.",
+                    target_period="Q3 FY26",
+                    source_quote="quote-update-target",
+                ),
+            ],
+        )
+        await session.commit()
+        target = rows[0]
+        original_updated_at = target.updated_at
+        assert target.status == CommitmentStatus.OPEN
+
+    # Give Postgres' clock at least one tick before the UPDATE so the
+    # ``updated_at`` comparison cannot collapse to equality.
+    await asyncio.sleep(0.05)
+
+    async with session_factory() as session:
+        await Repository(session).update_commitment_status(
+            commitment_id=target.id,
+            status=CommitmentStatus.MET,
+            resolved_filing_accession=resolving_accession,
+            resolved_reason="Q3 met guidance",
+        )
+        await session.commit()
+
+    async with session_factory() as session:
+        from app.memory.models import Commitment
+
+        refreshed = await session.get(Commitment, target.id)
+        assert refreshed is not None
+        assert refreshed.status == CommitmentStatus.MET.value
+        assert refreshed.resolved_filing_accession == resolving_accession
+        assert refreshed.resolved_reason == "Q3 met guidance"
+        assert refreshed.updated_at > original_updated_at
