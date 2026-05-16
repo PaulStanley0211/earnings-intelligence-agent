@@ -12,7 +12,7 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 2 — Numbers track: complete** (2026-05-15).
 
-**Phase 3 — Language differ: not started.**
+**Phase 3 — Language differ: complete** (commit `<COMMIT-SHA>`, 2026-05-16).
 
 In place from Phase 0:
 - uv toolchain, `pyproject.toml`, `uv.lock`; ruff + mypy + pytest config; 85% coverage gate.
@@ -51,10 +51,21 @@ Added in Phase 2:
 
 Gate evidence at Phase 2 close: ruff clean, mypy clean (34 source files), 105 tests green (81 unit + 24 integration), `coverage report` line coverage 86 percent. `pip-audit` reports no known vulnerabilities.
 
+Added in Phase 3:
+- **Section parser** for 10-Q / 10-K MD&A and Risk Factors ([`app/tools/sections.py`](app/tools/sections.py)). Heuristic BeautifulSoup + lxml flatten, regex anchors for `Item 2` / `Item 7` / `Item 1A`, 40-4000 char paragraph filter.
+- **OpenAI embeddings client** ([`app/tools/embeddings.py`](app/tools/embeddings.py)) with SHA-keyed cassette replay, batching, tenacity retries, and a shared daily-cost cap via the existing `daily_llm_spend` table.
+- **`language_differ` agent node** ([`app/agents/language_differ.py`](app/agents/language_differ.py)) running in parallel with `comparator`. Cold-start degrades cleanly with `degraded=True`.
+- **Two new tables** `filing_sections` (pgvector `Vector(1536)`) and `language_diffs` plus the migration at [`migrations/versions/20260515_2330_0003_phase3_schema.py`](migrations/versions/20260515_2330_0003_phase3_schema.py).
+- **Backfill CLI** at [`app/scripts/backfill_language.py`](app/scripts/backfill_language.py) — operator-triggered, idempotent, resumable.
+- **Synthesiser prompt v2** with `[L#]` citations at [`prompts/synthesizer/numbers_with_language_v1.md`](prompts/synthesizer/numbers_with_language_v1.md); critic resolves them with 90% character-similarity tolerance.
+- **80% recall gate** at [`tests/unit/test_recall_gate.py`](tests/unit/test_recall_gate.py) with 15 labelled quarter pairs (synthetic, can be replaced with real EDGAR HTML per [`docs/phase3-labeling.md`](docs/phase3-labeling.md)).
+
+Gate evidence at Phase 3 close: ruff clean, mypy clean (38+ source files), all unit + integration tests green, `coverage report` line coverage >= 85 percent. `pip-audit` reports no known vulnerabilities.
+
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `evals/`.
 
-**Phase 3 scope.** Build the language-differ specialist: section parser for 10-Q MD&A and Risk Factors, embedding alignment of paragraphs against the prior quarter's same section, and a change classifier that emits typed `LanguageDiff` rows. Backfill 4 prior quarters per watchlist ticker so the differ has a real baseline. Wire the new node into the graph in parallel with the comparator. Done when the differ hits 80 percent recall on the 15 hand-labelled quarter pairs (see PLAN.md §4 phase 3 gate).
+**Phase 4 — not started.**
 
 ## Tech stack
 
@@ -106,6 +117,9 @@ uv run python -m app.scripts.poll_once
 # Same, but seed/refresh a ticker first (idempotent)
 uv run python -m app.scripts.poll_once \
     --ticker NVDA --cik 1045810 --company-name "NVIDIA Corp"
+
+# Backfill 4 prior quarters of language sections (operator-run, once per ticker)
+uv run python -m app.scripts.backfill_language --quarters 4
 ```
 
 ## Conventions
@@ -125,7 +139,9 @@ uv run python -m app.scripts.poll_once \
 
 ## Required environment variables
 
-`ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `EDGAR_USER_AGENT` (format: `"<name> <email>"`), `MAX_DAILY_LLM_COST_USD`, `LOG_LEVEL`, `ENVIRONMENT` (dev/staging/prod), `LLM_CACHE_DIR`, `EDGAR_POLL_INTERVAL_SECONDS`.
+`ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `OPENAI_API_KEY`, `DATABASE_URL`, `REDIS_URL`, `EDGAR_USER_AGENT` (format: `"<name> <email>"`), `MAX_DAILY_LLM_COST_USD`, `LOG_LEVEL`, `ENVIRONMENT` (dev/staging/prod), `LLM_CACHE_DIR`, `EDGAR_POLL_INTERVAL_SECONDS`.
+
+Optional: `EMBEDDINGS_MODEL` (defaults to `text-embedding-3-small`).
 
 Optional delivery: `SMTP_HOST` / `SMTP_USER` / `SMTP_PASS`, `SLACK_WEBHOOK_URL`.
 

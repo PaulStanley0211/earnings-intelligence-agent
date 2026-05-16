@@ -78,3 +78,35 @@ REC=1 uv run pytest tests/integration/test_<scenario>.py
 
 Re-record only when an intentional prompt or contract change makes the
 cassette stale, not to make a flaky test pass.
+
+## Phase 3 - language differ first-time setup
+
+The differ requires a prior-quarter baseline in `filing_sections` to emit
+non-degraded diffs. Backfill once per active ticker before the first live
+event you want language coverage on:
+
+    uv run python -m app.scripts.backfill_language --quarters 4
+
+Properties:
+- Idempotent: skips any filing already in `filing_sections`.
+- Resumable: per-filing transaction boundary.
+- Cost-bounded: enforces `MAX_DAILY_LLM_COST_USD` through the shared
+  `daily_llm_spend` table.
+
+Re-embedding gaps: if the daily cap blocked an embeddings call mid-run,
+the affected `filing_sections` rows have `embedding=NULL`. Re-run the
+backfill the next day; the no-op idempotency check skips the parsed
+sections, but the embeddings update path will re-run for NULL rows
+via a follow-up script (out of scope for Phase 3 launch).
+
+## Phase 3 - language differ degraded paths
+
+The language differ degrades gracefully on multiple failure modes:
+
+| Symptom in logs | Cause | Action |
+|---|---|---|
+| `language_differ_short_circuit reason=primary_document_missing` | Filing row lacks `primary_document`. The watcher should set it. | Check the watcher; manually update the row if needed and re-run the graph. |
+| `language_differ_short_circuit reason=fetch_failed` | EDGAR archives 4xx/5xx after retries. | Check EDGAR status; the note ships without language coverage for this event. |
+| `language_differ_short_circuit reason=no_sections_parsed` | Section parser found no MD&A or Risk Factors. | Inspect the filing HTML; some 10-Q variants put MD&A in exhibits. |
+| `language_differ_embed_failed` | OpenAI rate-limit or timeout after retries. | Paragraphs persist with `embedding=NULL`; re-embed via a follow-up. |
+| Empty `language_diffs[i].diffs` with `degraded: true` | No prior quarter sections in memory. | Run the backfill CLI for this ticker. |
