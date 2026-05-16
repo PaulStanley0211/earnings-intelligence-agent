@@ -420,3 +420,26 @@ class LanguageDiff(Base):
             "section_kind",
         ),
     )
+
+
+class UploadedDocument(Base):
+    """Append-only record of a user-uploaded filing.
+
+    SHA-256 of the raw bytes is unique so re-uploading the same content
+    returns the existing row instead of inserting a duplicate.
+    """
+
+    __tablename__ = "uploaded_documents"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    upload_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    filing_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    parsed_text: Mapped[str] = mapped_column(Text, nullable=False)
+    parsed_char_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

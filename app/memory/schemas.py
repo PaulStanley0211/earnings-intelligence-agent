@@ -317,3 +317,38 @@ class LanguageDiffRecord(BaseModel):
     similarity: Decimal | None
     severity: Severity
     created_at: datetime
+
+
+# ---- Phase 4A: uploaded documents ----
+
+
+class NewUploadedDocument(BaseModel):
+    """Input shape for :meth:`Repository.add_uploaded_document`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    upload_id: str
+    ticker: str
+    filing_type: str
+    original_filename: str
+    content_sha256: str = Field(..., min_length=64, max_length=64)
+    parsed_text: str
+    parsed_char_count: int
+    page_count: int | None = None
+
+
+class UploadedDocumentRecord(BaseModel):
+    """Detached view of an :class:`~app.memory.models.UploadedDocument` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    upload_id: str
+    ticker: str
+    filing_type: str
+    original_filename: str
+    content_sha256: str
+    parsed_text: str
+    parsed_char_count: int
+    page_count: int | None
+    uploaded_at: datetime
