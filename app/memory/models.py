@@ -76,7 +76,9 @@ class Filing(Base):
     accession_number: Mapped[str] = mapped_column(String(32), primary_key=True)
     cik: Mapped[str] = mapped_column(String(10), nullable=False)
     ticker: Mapped[str] = mapped_column(String(16), nullable=False)
-    form: Mapped[str] = mapped_column(String(8), nullable=False)
+    # Widened from 8 to 16 in Phase 4B (migration 0006) so the literal
+    # "TRANSCRIPT" fits alongside the SEC-form abbreviations.
+    form: Mapped[str] = mapped_column(String(16), nullable=False)
     filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     primary_document: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -94,7 +96,8 @@ class Filing(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "form IN ('10-K', '10-Q', '8-K')", name="filings_form_supported"
+            "form IN ('10-K', '10-Q', '8-K', 'TRANSCRIPT')",
+            name="filings_form_supported",
         ),
         CheckConstraint(
             "status IN ('detected', 'processing', 'processed', 'failed')",
