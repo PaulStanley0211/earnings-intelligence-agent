@@ -16,7 +16,7 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 3 — Language differ: complete** (commit `ad3b159`, 2026-05-16).
 
-**Phase 4A — Upload infrastructure: complete** (commit `cb6579d`, 2026-05-16).
+**Phase 4A — Upload infrastructure: complete** (commit `4978f2a`, 2026-05-16).
 
 **Phase 4 — Upload intake + transcript analyzer: in progress** (2026-05-16 onward, executing under the upload-first pivot design spec). Old Phase 4 scope (third-party transcript scraping) was scrapped in favor of user-supplied transcripts + a document-advisor agent that uses the Phase 1 EDGAR client to tell users exactly which filings to fetch.
 
