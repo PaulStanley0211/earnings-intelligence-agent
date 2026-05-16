@@ -61,6 +61,14 @@ class _StubCompiledGraph:
     Returns a state dict with the synthesised fields populated so the
     upload route can build a complete :class:`UploadResponse` without
     actually exercising specialist nodes (those have their own tests).
+
+    NOTE: this stub bypasses LangGraph's reducer entirely and therefore
+    does NOT exercise the per-field ownership contract enforced by
+    :data:`app.models.state._FIELD_OWNERS` via :class:`StateUpdate`. A
+    passing test here does not rule out regressions in the real compiled
+    graph's field-ownership behaviour - those need to be caught by
+    node-level unit tests and the full-graph integration tests that
+    build via ``build_graph``.
     """
 
     async def ainvoke(

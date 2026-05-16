@@ -36,9 +36,11 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        from app.api.dependencies import shutdown_compiled_graph
         from app.memory.db import dispose_engine
         from app.memory.redis_client import dispose_redis
 
+        await shutdown_compiled_graph()
         await dispose_engine()
         await dispose_redis()
         get_logger().info("app_shutdown")

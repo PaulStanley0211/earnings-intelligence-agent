@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncIterator
 from datetime import date
 from decimal import Decimal
@@ -48,11 +49,6 @@ async def get_edgar_client() -> AsyncIterator[EdgarClient]:
         yield edgar
 
 
-def get_session_factory_dep() -> async_sessionmaker[AsyncSession]:
-    """FastAPI dependency: return the process-wide async session factory."""
-    return get_session_factory()
-
-
 class _DailySpendAdapter:
     """Adapter satisfying ``EmbeddingsClient``'s ``_SupportsDailySpend`` protocol.
 
@@ -87,6 +83,7 @@ class _DailySpendAdapter:
 
 
 _compiled_graph: CompiledStateGraph[Any, Any, Any, Any] | None = None
+_unmanaged_clients: list[Any] = []
 
 
 def get_compiled_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
@@ -97,6 +94,11 @@ def get_compiled_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     context manager - the underlying httpx client is built eagerly in
     ``__init__`` and lives for the lifetime of the application, mirroring
     the lifecycle of the compiled graph.
+
+    The EDGAR and consensus clients hold long-lived ``httpx.AsyncClient``
+    pools. Both are appended to ``_unmanaged_clients`` so the FastAPI
+    lifespan shutdown can drain them via :func:`shutdown_compiled_graph`
+    on graceful restart.
 
     Tests should override this dependency via
     ``app.dependency_overrides[get_compiled_graph]`` to inject a graph wired
@@ -125,14 +127,26 @@ def get_compiled_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
             llm=llm,
             session_factory=session_factory,
         )
+        _unmanaged_clients.append(edgar)
+        _unmanaged_clients.append(consensus)
     return _compiled_graph
 
 
-def reset_compiled_graph() -> None:
-    """Drop the cached compiled graph so the next call rebuilds it.
+async def shutdown_compiled_graph() -> None:
+    """Close the httpx clients owned by the lazy graph singleton.
 
-    Intended for tests that need to swap settings between cases; production
-    code should never need this.
+    Called from ``app.main:_lifespan`` shutdown so production graceful-
+    restart drains the EDGAR / consensus connection pools cleanly. Also
+    resets the singleton so re-creating the application within a single
+    process (e.g. integration test suites) yields a fresh graph rather
+    than a stale one bound to closed clients.
     """
     global _compiled_graph
+    for client in _unmanaged_clients:
+        # Best-effort drain: a misbehaving client must not block shutdown.
+        # Logging is intentionally avoided here because the logger may
+        # already be torn down by this point.
+        with contextlib.suppress(Exception):
+            await client.aclose()
+    _unmanaged_clients.clear()
     _compiled_graph = None

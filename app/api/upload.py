@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Final, Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +90,7 @@ def _parse_or_422(content_type: str | None, raw: bytes) -> ParsedDocument:
 
 @router.post("/upload", response_model=UploadResponse)
 async def post_upload(
+    request: Request,
     ticker: Annotated[str, Form()],
     filing_type: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
@@ -106,6 +107,26 @@ async def post_upload(
     _reject_unsupported_type(file.content_type)
 
     settings = get_settings()
+    # Defense-in-depth: short-circuit obviously oversized uploads before
+    # buffering the body. httpx tends to overwrite Content-Length on its
+    # own, so this branch is hard to exercise in our test client; the
+    # post-read size check below remains the authoritative guard for
+    # clients that lie about Content-Length or use chunked transfer.
+    declared_length = request.headers.get("content-length")
+    if declared_length is not None:
+        try:
+            advertised = int(declared_length)
+        except ValueError:
+            advertised = -1
+        if advertised > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Upload exceeds MAX_UPLOAD_BYTES "
+                    f"({settings.max_upload_bytes} bytes)."
+                ),
+            )
+
     raw = await file.read()
     if len(raw) > settings.max_upload_bytes:
         raise HTTPException(
