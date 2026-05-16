@@ -1,11 +1,14 @@
 """FastAPI application entry point.
 
-Wires the API router, configures structured logging and tracing, and exposes
-the resulting ``app`` for Uvicorn (``uvicorn app.main:app``).
+Wires the API surface (health, advise, upload, chat) and the application
+lifespan. On startup the lifespan configures structured logging and tracing;
+on shutdown it drains the singleton compiled graph (closing its EDGAR /
+Finnhub httpx clients) and disposes the database engine and Redis pool so a
+graceful restart leaves no in-flight connections behind.
 
-The agent graph itself is wired in by Phase 1; this module's only job in
-Phase 0 is to give Docker something to serve so the deployment topology can be
-validated end-to-end.
+The compiled LangGraph (Phase 1-3 pipeline) is built lazily on first
+request via :func:`app.api.dependencies.get_compiled_graph`; this module
+only owns the lifecycle hooks, not the graph itself.
 """
 
 from __future__ import annotations

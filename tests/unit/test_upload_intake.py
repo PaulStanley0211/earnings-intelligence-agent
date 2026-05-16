@@ -219,3 +219,31 @@ async def test_intake_recovers_from_concurrent_duplicate_insert() -> None:
     assert repo.add_calls == 1
     # The returned event reuses the winner's upload_id.
     assert event.accession_number == "upload-winner-id"
+
+
+@pytest.mark.asyncio
+async def test_intake_rejects_rebind_to_different_ticker_or_form() -> None:
+    """A second upload of the same bytes under a different ticker/form must fail."""
+    repo = _FakeRepository()
+    parsed = ParsedDocument(
+        text="hi", char_count=2, page_count=1, content_sha256="h" * 64
+    )
+    # First upload -- MSFT / 8-K.
+    await intake_upload(
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="x.pdf",
+        parsed=parsed,
+        repository=repo,
+    )
+    assert len(repo.saved) == 1
+    # Same bytes, different filing_type -- must raise, must NOT insert a second row.
+    with pytest.raises(ValueError, match="previously uploaded"):
+        await intake_upload(
+            ticker="MSFT",
+            filing_type="10-Q",
+            original_filename="x.pdf",
+            parsed=parsed,
+            repository=repo,
+        )
+    assert len(repo.saved) == 1

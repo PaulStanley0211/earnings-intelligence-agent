@@ -55,6 +55,25 @@ def _filing_form(filing_type: str) -> FilingForm:
         ) from exc
 
 
+def _reject_if_rebind(
+    existing: UploadedDocumentRecord, ticker_upper: str, form_value: str
+) -> None:
+    """Raise if the existing row's ticker/form disagree with the new call.
+
+    Without this guard, a second upload of the same bytes under a different
+    ticker or filing_type would silently reuse the original row's upload_id,
+    producing a FilingEvent whose ``ticker`` / ``form`` disagree with the
+    persisted audit row.
+    """
+    if existing.ticker != ticker_upper or existing.filing_type != form_value:
+        raise ValueError(
+            f"Content was previously uploaded for "
+            f"{existing.ticker!r}/{existing.filing_type!r}; re-uploading "
+            f"the same bytes as {ticker_upper!r}/{form_value!r} would "
+            "create an inconsistent audit row. Use a different file."
+        )
+
+
 async def intake_upload(
     *,
     ticker: str,
@@ -78,6 +97,7 @@ async def intake_upload(
 
     existing = await repository.get_uploaded_document_by_sha256(parsed.content_sha256)
     if existing is not None:
+        _reject_if_rebind(existing, ticker_upper, form.value)
         upload_id = existing.upload_id
     else:
         candidate_upload_id = uuid4().hex
@@ -101,6 +121,7 @@ async def intake_upload(
             )
             if winner is None:
                 raise
+            _reject_if_rebind(winner, ticker_upper, form.value)
             upload_id = winner.upload_id
 
     event = FilingEvent(
