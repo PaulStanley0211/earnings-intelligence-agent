@@ -2,8 +2,10 @@
 
 Persists an uploaded document and produces the canonical
 :class:`~app.models.state.FilingEvent` that drives the downstream graph.
-A duplicate upload (same SHA-256) is returned idempotently: we look up the
-existing row and reuse its ``upload_id`` as the synthetic accession number.
+The intake is idempotent on the SHA-256 of the raw bytes: re-uploading the
+same content -- including under concurrent requests racing into the same
+``add_uploaded_document`` -- returns the existing row's ``upload_id``
+rather than producing a duplicate.
 
 The graph downstream is identical to the watcher-driven path; only the
 ``FilingEvent.source`` discriminator differs.
@@ -14,6 +16,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
+
+from sqlalchemy.exc import IntegrityError
 
 from app.memory.schemas import (
     NewUploadedDocument,
@@ -76,19 +80,28 @@ async def intake_upload(
     if existing is not None:
         upload_id = existing.upload_id
     else:
-        upload_id = uuid4().hex
-        await repository.add_uploaded_document(
-            NewUploadedDocument(
-                upload_id=upload_id,
-                ticker=ticker_upper,
-                filing_type=form.value,
-                original_filename=original_filename,
-                content_sha256=parsed.content_sha256,
-                parsed_text=parsed.text,
-                parsed_char_count=parsed.char_count,
-                page_count=parsed.page_count,
+        candidate_upload_id = uuid4().hex
+        try:
+            await repository.add_uploaded_document(
+                NewUploadedDocument(
+                    upload_id=candidate_upload_id,
+                    ticker=ticker_upper,
+                    filing_type=form.value,
+                    original_filename=original_filename,
+                    content_sha256=parsed.content_sha256,
+                    parsed_text=parsed.text,
+                    parsed_char_count=parsed.char_count,
+                    page_count=parsed.page_count,
+                )
             )
-        )
+            upload_id = candidate_upload_id
+        except IntegrityError:
+            winner = await repository.get_uploaded_document_by_sha256(
+                parsed.content_sha256
+            )
+            if winner is None:
+                raise
+            upload_id = winner.upload_id
 
     event = FilingEvent(
         accession_number=f"upload-{upload_id}",

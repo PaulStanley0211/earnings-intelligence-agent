@@ -148,3 +148,74 @@ async def test_intake_rejects_unsupported_filing_type() -> None:
             repository=repo,
         )
     assert len(repo.saved) == 0
+
+
+@pytest.mark.asyncio
+async def test_intake_recovers_from_concurrent_duplicate_insert() -> None:
+    """When a concurrent caller wins the insert race, we recover idempotently."""
+    from sqlalchemy.exc import IntegrityError
+
+    class _RacyRepository:
+        """Repository where ``add_uploaded_document`` always raises IntegrityError
+        because a sibling caller already committed the same content.
+        """
+
+        def __init__(self, winner: UploadedDocumentRecord) -> None:
+            self._winner = winner
+            self.add_calls = 0
+
+        async def add_uploaded_document(
+            self, new: NewUploadedDocument
+        ) -> UploadedDocumentRecord:
+            self.add_calls += 1
+            raise IntegrityError("uq violation", {}, None)  # type: ignore[arg-type]
+
+        async def get_uploaded_document_by_sha256(
+            self, content_sha256: str
+        ) -> UploadedDocumentRecord | None:
+            # First call (before the race): row not visible yet -> None.
+            # Subsequent calls (after the race): winner is visible.
+            if self.add_calls == 0:
+                return None
+            return self._winner
+
+        async def get_watchlist_entry_by_ticker(
+            self, ticker: str
+        ) -> WatchlistRecord | None:
+            return WatchlistRecord(
+                ticker="MSFT",
+                cik="0000789019",
+                company_name="Microsoft Corp",
+                active=True,
+                added_at=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+
+    winner = UploadedDocumentRecord(
+        id=1,
+        upload_id="winner-id",
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="x.pdf",
+        content_sha256="g" * 64,
+        parsed_text="hi",
+        parsed_char_count=2,
+        page_count=1,
+        uploaded_at=datetime.now(UTC),
+    )
+
+    parsed = ParsedDocument(
+        text="hi", char_count=2, page_count=1, content_sha256="g" * 64
+    )
+    repo = _RacyRepository(winner=winner)
+
+    event = await intake_upload(
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="x.pdf",
+        parsed=parsed,
+        repository=repo,
+    )
+    # We tried exactly once to insert, then recovered.
+    assert repo.add_calls == 1
+    # The returned event reuses the winner's upload_id.
+    assert event.accession_number == "upload-winner-id"
