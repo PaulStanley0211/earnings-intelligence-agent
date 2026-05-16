@@ -16,6 +16,8 @@ Seven-phase build — see [`PLAN.md`](PLAN.md) for scope, architecture, and acce
 
 **Phase 3 — Language differ: complete** (commit `ad3b159`, 2026-05-16).
 
+**Phase 4A — Upload infrastructure: complete** (commit `cb6579d`, 2026-05-16).
+
 **Phase 4 — Upload intake + transcript analyzer: in progress** (2026-05-16 onward, executing under the upload-first pivot design spec). Old Phase 4 scope (third-party transcript scraping) was scrapped in favor of user-supplied transcripts + a document-advisor agent that uses the Phase 1 EDGAR client to tell users exactly which filings to fetch.
 
 In place from Phase 0:
@@ -65,6 +67,18 @@ Added in Phase 3:
 - **80% recall gate** at [`tests/unit/test_recall_gate.py`](tests/unit/test_recall_gate.py) with 15 labelled quarter pairs (synthetic, can be replaced with real EDGAR HTML per [`docs/phase3-labeling.md`](docs/phase3-labeling.md)).
 
 Gate evidence at Phase 3 close: ruff clean, mypy clean (38+ source files), all unit + integration tests green, `coverage report` line coverage >= 85 percent. `pip-audit` reports no known vulnerabilities.
+
+Added in Phase 4A:
+- **Document parser** at [`app/tools/documents.py`](app/tools/documents.py) — PDF + plain-text intake, scanned-PDF rejection, SHA-256 content hashing.
+- **EDGAR advisor** at [`app/tools/advisor.py`](app/tools/advisor.py) plus the agent wrapper at [`app/agents/document_advisor.py`](app/agents/document_advisor.py).
+- **Upload intake node** at [`app/agents/upload_intake.py`](app/agents/upload_intake.py) — idempotent on SHA-256 even under concurrent-insert races; emits `FilingEvent` with `source=FilingEventSource.UPLOAD`.
+- **API routes**: `POST /api/advise` returns the upload checklist, `POST /api/upload` runs the full Phase 1-3 pipeline on the uploaded PDF/text and returns the structured analysis, `POST /api/chat` reserved with a 501 stub for Phase 6.
+- **Watcher gated** behind `WATCHER_MODE_ENABLED` (default `false`); `/health` reports `edgar_watcher` as `not_applicable` when the flag is off.
+- **Migration** `0004_phase4a_uploaded_documents` adds the append-only `uploaded_documents` table with SHA-256 dedupe.
+- **Graceful shutdown**: `app/main.py`'s lifespan now closes the singleton EDGAR + Finnhub httpx clients on shutdown via `shutdown_compiled_graph()`.
+- **Sample fixtures**: MSFT 8-Ks at [`tests/fixtures/uploaded_pdfs/`](tests/fixtures/uploaded_pdfs/).
+
+Gate evidence at Phase 4A close: ruff clean, mypy clean (46 source files), 208 unit tests + 47 integration tests green (modulo the pre-existing `test_missing_anthropic_key_raises` env-leak flake), `coverage report` line coverage 88.15 percent. `pip-audit` reports no known vulnerabilities.
 
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `evals/`.
