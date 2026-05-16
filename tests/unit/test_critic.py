@@ -10,10 +10,13 @@ import pytest
 from app.agents.critic import _MAX_CRITIC_ATTEMPTS, OWNER, critique_draft
 from app.models.state import (
     AgentState,
+    AnswerClass,
+    CommitmentExtracted,
     CriticFinding,
     CriticVerdict,
     FilingEvent,
     FilingForm,
+    QAPairPayload,
 )
 
 
@@ -287,3 +290,109 @@ def test_critic_rejects_l_citation_with_no_matching_index() -> None:
     update = critique_draft(state)
     findings = update.changes["critic_findings"]
     assert any(f.severity == "error" and "L7" in f.message for f in findings)
+
+
+def _transcript_state(
+    *,
+    draft: str,
+    qa_pairs: list[QAPairPayload] | None = None,
+    commitments: list[CommitmentExtracted] | None = None,
+) -> AgentState:
+    return AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000950170-26-000050",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.TRANSCRIPT,
+            filed_at=datetime.now(UTC),
+            source_url="https://ir.example.com/transcript.pdf",
+        ),
+        qa_pairs=qa_pairs or [],
+        commitments=commitments or [],
+        draft_note=draft,
+    )
+
+
+def test_critic_accepts_qa_citation_within_tolerance() -> None:
+    """A quoted Q&A phrase that resolves into the indexed answer is accepted."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name="Brent Thill",
+        question_text="How should we think about Azure margins next quarter?",
+        answer_text="We expect margins to remain stable around 47 percent.",
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="a" * 64,
+    )
+    draft = (
+        "## Q&A signals\n"
+        "- We expect margins to remain stable around 47 percent [Q1].\n"
+    )
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert not any(f.severity == "error" and "Q1" in f.message for f in findings)
+
+
+def test_critic_rejects_qa_citation_with_low_similarity() -> None:
+    """A quoted phrase that does not appear in the cited Q&A is rejected."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name="Brent Thill",
+        question_text="How are Azure margins trending?",
+        answer_text="Hard to forecast precisely; we will update next quarter.",
+        answer_class=AnswerClass.DEFLECTED,
+        sha256_text="a" * 64,
+    )
+    draft = (
+        "## Q&A signals\n"
+        "- We are pivoting away from cloud entirely and refocusing on PCs [Q1].\n"
+    )
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "Q1" in f.message for f in findings)
+
+
+def test_critic_accepts_commitment_citation() -> None:
+    """A draft phrase matching a commitment's source_quote is accepted."""
+    commitment = CommitmentExtracted(
+        commitment_text="Azure margin expansion of 100 basis points next quarter.",
+        target_period="Q3 2026",
+        source_quote="we expect Azure margin expansion of 100 basis points next quarter",
+    )
+    draft = (
+        "## Commitments\n"
+        "- we expect Azure margin expansion of 100 basis points next quarter [K1].\n"
+    )
+    state = _transcript_state(draft=draft, commitments=[commitment])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert not any(f.severity == "error" and "K1" in f.message for f in findings)
+
+
+def test_critic_rejects_unresolved_qa_citation() -> None:
+    """A [Q#] that points past the end of the qa_pairs list is rejected."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name=None,
+        question_text="q",
+        answer_text="a",
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="a" * 64,
+    )
+    draft = "## Q&A signals\n- Mystery phrase [Q99].\n"
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "Q99" in f.message for f in findings)
+
+
+def test_critic_rejects_unresolved_commitment_citation() -> None:
+    """A [K#] without a backing commitment is rejected."""
+    draft = "## Commitments\n- A made-up promise [K3].\n"
+    state = _transcript_state(draft=draft)
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "K3" in f.message for f in findings)
