@@ -153,5 +153,6 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "coverage>=7.14.0",
+    "pypdf>=6.11.0",
     "pytest-cov>=7.1.0",
 ]
