@@ -41,6 +41,7 @@ dependencies = [
     "lxml>=5.2",
     "pgvector>=0.3",
     "pypdf>=6.11.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]

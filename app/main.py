@@ -18,6 +18,7 @@ from fastapi import FastAPI
 from app import __version__
 from app.api.advise import router as advise_router
 from app.api.health import router as health_router
+from app.api.upload import router as upload_router
 from app.config import get_settings
 from app.observability.logging import configure_logging, get_logger
 from app.observability.tracing import configure_tracing
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(health_router)
     app.include_router(advise_router)
+    app.include_router(upload_router)
     return app
 
 
