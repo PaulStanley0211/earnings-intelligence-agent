@@ -21,11 +21,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FilingForm(StrEnum):
-    """SEC filing forms the system understands."""
+    """SEC filing forms the system understands.
+
+    ``TRANSCRIPT`` is not a true SEC form; it labels user-uploaded earnings-call
+    transcripts so the upload-driven path can route the document through the
+    Phase 4B transcript analyzer instead of the XBRL-financials track.
+    """
 
     FORM_10K = "10-K"
     FORM_10Q = "10-Q"
     FORM_8K = "8-K"
+    TRANSCRIPT = "TRANSCRIPT"
 
 
 class FilingEventSource(StrEnum):
