@@ -51,6 +51,7 @@ dev = [
     "mypy>=1.10",
     "pip-audit>=2.7",
     "types-redis>=4.6",
+    "pyyaml>=6.0",
 ]
 
 [build-system]
