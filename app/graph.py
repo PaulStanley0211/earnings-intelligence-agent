@@ -21,6 +21,12 @@ after both upstreams have delivered their partial state updates. The two
 specialists own disjoint ``AgentState`` fields (``comparisons`` and
 ``language_diffs`` respectively) so the reducer never conflicts.
 
+Entry points. The graph is started identically by both the EDGAR watcher and
+the ``POST /api/upload`` route: each constructs a :class:`FilingEvent` and
+calls ``compiled_graph.ainvoke(initial_state)``. The ``FilingEvent.source``
+discriminator distinguishes the two for tracing and logging; downstream
+nodes do not branch on it.
+
 Constructed via :func:`build_graph` so callers can inject the EDGAR client,
 LLM client, consensus fetcher, embeddings client, and session factory.
 Production wires the live clients; tests wire stubs and recorded LLM
