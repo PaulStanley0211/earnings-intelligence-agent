@@ -74,6 +74,13 @@ async def _run(argv: list[str] | None = None) -> int:
     settings = get_settings()
     configure_logging(level=settings.log_level)
 
+    if not settings.watcher_mode_enabled:
+        _logger.warning(
+            "watcher_mode_disabled_but_poll_once_invoked: "
+            "running an ad-hoc EDGAR poll while WATCHER_MODE_ENABLED=false. "
+            "The continuous watcher will not start."
+        )
+
     await _seed_watchlist_if_requested(args)
 
     with with_trace_id() as trace_id:
