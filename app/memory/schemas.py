@@ -21,7 +21,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.state import FilingForm
+from app.models.state import (
+    AnswerClass as AnswerClass,
+)
+from app.models.state import (
+    CommitmentStatus as CommitmentStatus,
+)
+from app.models.state import (
+    FilingForm,
+)
 
 
 class FilingStatus(StrEnum):
@@ -355,27 +363,12 @@ class UploadedDocumentRecord(BaseModel):
 
 
 # ---- Phase 4B: transcript Q&A pairs and management commitments ----
-
-
-class AnswerClass(StrEnum):
-    """Classification the analyzer assigns to a Q&A answer's directness."""
-
-    DIRECT = "direct"
-    PARTIAL = "partial"
-    DEFLECTED = "deflected"
-
-
-class CommitmentStatus(StrEnum):
-    """Lifecycle states for a :class:`~app.memory.models.Commitment` row.
-
-    Commitments are inserted as ``OPEN`` and only the reconciliation pass
-    flips them to ``MET`` / ``MISSED`` / ``STILL_OPEN``.
-    """
-
-    OPEN = "open"
-    MET = "met"
-    MISSED = "missed"
-    STILL_OPEN = "still_open"
+#
+# ``AnswerClass`` and ``CommitmentStatus`` are defined in
+# :mod:`app.models.state` so the in-graph ``AgentState`` payload models
+# can use them without a circular import. They are re-exported at the top
+# of this module for backwards compatibility with existing callers that
+# import them from here.
 
 
 class NewQAPair(BaseModel):
