@@ -1,0 +1,61 @@
+Operator: Good afternoon and thank you for standing by. Welcome to NVIDIA's second quarter fiscal 2026 earnings conference call. After the speakers' presentation there will be a question and answer session. I would now like to hand the conference over to Simona Jankowski, Vice President of Investor Relations. Please go ahead.
+
+Simona Jankowski: Thank you. Good afternoon everyone and welcome to NVIDIA's conference call for the second quarter of fiscal 2026. With me today from NVIDIA are Jensen Huang, President and Chief Executive Officer, and Colette Kress, Executive Vice President and Chief Financial Officer. The content of today's call is NVIDIA's property and reflects forward-looking statements subject to risks identified in our most recent filings. I will now turn the call over to Jensen.
+
+Jensen Huang: Thanks Simona. Q2 was another record quarter. Revenue was 47.3 billion dollars, up 56 percent year over year. Data center revenue reached 41.8 billion dollars, with the Blackwell platform now representing approximately 62 percent of data center compute revenue versus 38 percent last quarter. The transition from Hopper to Blackwell is happening faster than any previous platform transition in our history. We shipped over 1.4 million Blackwell GPUs in the quarter, and our visibility into the second half of the fiscal year remains exceptional. Customer demand for our Spectrum-X Ethernet networking platform also accelerated, with Spectrum-X revenue exceeding 2.6 billion dollars in the quarter.
+
+Colette Kress: Thanks Jensen. Gross margin was 75.8 percent on a non-GAAP basis, up 90 basis points sequentially as Blackwell mix improved and component costs stabilised. We expect gross margin to remain in the mid-75 percent range through the second half of fiscal 2026. Operating expenses were 4.1 billion dollars. For Q3 we are guiding revenue of 52 billion dollars plus or minus 2 percent. Now let us open the line for questions.
+
+Operator: Our first question comes from Vivek Arya of Bank of America Securities.
+
+Analyst: Vivek Arya from Bank of America Securities. Jensen, the Blackwell ramp is clearly impressive. Can you give us a sense for what percentage of your largest hyperscale customers have actually deployed Blackwell in production versus running pilot workloads? And what does the visibility look like for the next-generation Rubin platform?
+
+CEO: Jensen Huang. Vivek, all five of our largest hyperscale customers are in production with Blackwell at meaningful scale today. Four of the five have already placed firm orders for Rubin systems that begin shipping in the second half of calendar 2026. We have lead times stretching well into calendar 2027 for Rubin, which gives us strong visibility into next fiscal year demand. We will share more detail on the Rubin platform at our GTC conference in March.
+
+Operator: Our next question comes from Stacy Rasgon of Bernstein.
+
+Analyst: Stacy Rasgon from Bernstein. Colette, the gross margin commentary is helpful but I want to push a little. Can you break out specifically what is helping margin in the second half, and how investors should think about Rubin economics in the first year of the ramp given typical new-platform headwinds?
+
+CFO: Colette Kress. Stacy, the second half tailwinds are improving yields on the GB200 and GB300 SKUs and a richer mix of higher-margin networking content per system. I am not going to give you a specific Rubin gross-margin number today. What I will say is that we have designed Rubin with the lessons learned from Blackwell, and we expect the new-platform margin trough to be shallower and shorter than what we experienced last cycle.
+
+Operator: Our next question comes from Joseph Moore of Morgan Stanley.
+
+Analyst: Joseph Moore from Morgan Stanley. There has been a lot of investor focus on the AI infrastructure investments by sovereign nations. Can you size that opportunity for us and tell us what percentage of Q2 data center revenue came from sovereign-AI customers?
+
+CEO: Jensen Huang. Joe, sovereign AI is now one of our fastest-growing customer categories. We are working with national initiatives in over 30 countries, and we expect sovereign AI to contribute more than 25 billion dollars of cumulative revenue over the next 24 months. I am not going to give you the exact Q2 percentage breakout today.
+
+Operator: Our next question comes from CJ Muse of Cantor Fitzgerald.
+
+Analyst: CJ Muse from Cantor Fitzgerald. On the China situation, the export controls have been a headwind for several quarters now. Can you give us an update on the H20 successor product timing and your latest read on Chinese demand?
+
+CEO: Jensen Huang. CJ, we are continuing to work with the US government to ensure our products comply with export rules while still serving the Chinese market. The next-generation product designed for that market is in advanced development. We expect to be in a position to ship that product in the first quarter of calendar 2026. Chinese demand remains strong but we are not embedding meaningful China revenue in our Q3 or Q4 guidance until we have clarity on the shipment timeline.
+
+Operator: Our next question comes from Timothy Arcuri of UBS.
+
+Analyst: Timothy Arcuri from UBS. Jensen, you mentioned Spectrum-X exceeded 2.6 billion in the quarter. Can you give us a longer-term view on networking attach rates and where you expect Spectrum-X plus NVLink Switch to land as a percentage of system revenue by exit fiscal 2027?
+
+CEO: Jensen Huang. Tim, networking attach has been climbing every quarter. In the Blackwell generation customers are buying significantly more networking content per GPU than they did in Hopper, and that trend accelerates with Rubin given the rack-scale architecture. We expect networking to represent over 22 percent of data center system revenue by exit fiscal 2027, up from roughly 14 percent today.
+
+Operator: Our next question comes from Aaron Rakers of Wells Fargo.
+
+Analyst: Aaron Rakers from Wells Fargo. Colette, on operating expenses, you guided 4.1 billion for the quarter. How should we think about opex growth in the second half given the R&D ramp for Rubin and the cadence of new product launches?
+
+CFO: Colette Kress. Aaron, we expect non-GAAP operating expense to grow in the high teens sequentially in Q3 as we ramp investment ahead of the Rubin launch. We will give updated full-year color when we report Q3 results.
+
+Operator: Our next question comes from Atif Malik of Citi.
+
+Analyst: Atif Malik from Citi. On enterprise versus hyperscale mix, can you talk about how enterprise AI adoption is progressing and whether the enterprise pipeline is large enough to be material in the next 12 months?
+
+CEO: Jensen Huang. Atif, enterprise is one of the bright spots. Enterprise AI revenue more than tripled year over year in Q2, though it is still a smaller share of total data center than hyperscale. We have over 12,000 enterprises now in active deployment of NVIDIA AI Enterprise software, up from roughly 4,500 a year ago. We expect enterprise AI to exceed 10 percent of data center revenue by the end of fiscal 2026.
+
+Operator: Our next question comes from Harlan Sur of JP Morgan.
+
+Analyst: Harlan Sur from JP Morgan. Jensen, on supply, you mentioned visibility through the second half. Are there specific component constraints we should be aware of, and is HBM capacity still the binding constraint?
+
+CEO: Jensen Huang. Harlan, HBM remains tight but we have secured supply commitments from all three of our HBM partners that cover our build plan through the first half of calendar 2027. The current binding constraint in our build is actually advanced packaging capacity at TSMC. We are working closely with TSMC on capacity expansion and expect packaging capacity to roughly double by the middle of calendar 2026.
+
+Operator: That concludes our question and answer session. I would like to turn the call back to Jensen for closing comments.
+
+Jensen Huang: Thank you all. We look forward to seeing you at GTC in March.
+
+Operator: This concludes today's conference call. You may now disconnect.
