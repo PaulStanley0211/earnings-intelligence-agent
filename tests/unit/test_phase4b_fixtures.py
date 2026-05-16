@@ -63,3 +63,54 @@ def test_commitments_totals_meet_spec_band() -> None:
         labels = json.loads(label_path.read_text(encoding="utf-8"))
         total += len(labels["commitments"])
     assert 12 <= total <= 20, f"commitments total {total} outside 12-20 band"
+
+
+def test_cross_quarter_pair_present_and_consistent() -> None:
+    """The Q2/Q3 cross-quarter pair exists, ties together cleanly, and exercises
+    all three reconciliation verdicts."""
+    real_dir = Path(__file__).resolve().parents[1] / "fixtures" / "transcripts" / "real"
+    q2_path = next(real_dir.glob("*_q2_2026.txt"))
+    q3_path = next(real_dir.glob("*_q3_2026.txt"))
+    q2_labels = json.loads(q2_path.with_suffix(".labels.json").read_text(encoding="utf-8"))
+    q3_labels = json.loads(q3_path.with_suffix(".labels.json").read_text(encoding="utf-8"))
+
+    # Both have Q&A pairs.
+    assert len(q2_labels["qa_pairs"]) >= 5
+    assert len(q3_labels["qa_pairs"]) >= 5
+    total = len(q2_labels["qa_pairs"]) + len(q3_labels["qa_pairs"])
+    assert 15 <= total <= 22, f"Q&A pair total {total} outside spec band 15-20"
+
+    # Verbatim substrings hold for both transcripts.
+    q2_text = q2_path.read_text(encoding="utf-8")
+    q3_text = q3_path.read_text(encoding="utf-8")
+    for pair in q2_labels["qa_pairs"]:
+        assert pair["question_text"] in q2_text
+        assert pair["answer_text"] in q2_text
+    for pair in q3_labels["qa_pairs"]:
+        assert pair["question_text"] in q3_text
+        assert pair["answer_text"] in q3_text
+
+    # Q3 labels carry the reconciliation_targets section.
+    targets = q3_labels["reconciliation_targets"]
+    assert len(targets) >= 3, "need >= 3 reconciliation targets to exercise all statuses"
+    statuses_seen = {t["expected_new_status"] for t in targets}
+    assert {"met", "missed", "still_open"}.issubset(statuses_seen), (
+        f"missing status coverage; got {statuses_seen}"
+    )
+
+    # Every q2_commitment_text in reconciliation_targets must match a Q2 commitment.
+    q2_commitment_texts = {c["commitment_text"] for c in q2_labels["commitments"]}
+    for t in targets:
+        assert t["q2_commitment_text"] in q2_commitment_texts, (
+            f"reconciliation target references unknown q2 commitment: "
+            f"{t['q2_commitment_text']!r}"
+        )
+
+    # For met/missed targets, q3_evidence_quote must be a verbatim substring of Q3.
+    for t in targets:
+        if t["expected_new_status"] in {"met", "missed"}:
+            quote = t["q3_evidence_quote"]
+            assert quote is not None, "met/missed must carry a q3_evidence_quote"
+            assert quote in q3_text, (
+                f"q3_evidence_quote not verbatim in Q3 transcript: {quote!r}"
+            )
