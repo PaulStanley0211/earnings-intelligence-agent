@@ -27,11 +27,13 @@ from app.agents.citations import (
     ComparisonCitation,
     FactCitation,
     LanguageCitation,
+    PeerCitation,
     QACitation,
     build_commitment_citations,
     build_comparison_citations,
     build_fact_citations,
     build_language_citations,
+    build_peer_citations,
     build_qa_citations,
 )
 from app.models.state import (
@@ -73,7 +75,7 @@ _UNCITED_NUMBER: Final[re.Pattern[str]] = re.compile(
 )
 
 _CITED_LANGUAGE: Final[re.Pattern[str]] = re.compile(
-    r"\[(?P<cite>[LQK]\d+)\]",
+    r"\[(?P<cite>[LQKP]\d+)\]",
     re.IGNORECASE,
 )
 
@@ -128,6 +130,7 @@ def critique_draft(state: AgentState) -> StateUpdate:
     commitment_index = {
         c.identifier: c for c in build_commitment_citations(state.commitments)
     }
+    peer_index = {c.identifier: c for c in build_peer_citations(state.peer_context)}
 
     findings: list[CriticFinding] = []
     cited_spans: list[tuple[int, int]] = []
@@ -143,6 +146,7 @@ def critique_draft(state: AgentState) -> StateUpdate:
             language_index=language_index,
             qa_index=qa_index,
             commitment_index=commitment_index,
+            peer_index=peer_index,
         )
     )
 
@@ -380,8 +384,9 @@ def _validate_quote_citations(
     language_index: dict[str, LanguageCitation],
     qa_index: dict[str, QACitation],
     commitment_index: dict[str, CommitmentCitation],
+    peer_index: dict[str, PeerCitation],
 ) -> list[CriticFinding]:
-    """Validate each ``[L#]``/``[Q#]``/``[K#]`` quote citation in ``text``.
+    """Validate each ``[L#]``/``[Q#]``/``[K#]``/``[P#]`` quote citation in ``text``.
 
     For every quote-style citation marker the function resolves the id
     against the matching namespace index and verifies that the surrounding
@@ -397,6 +402,7 @@ def _validate_quote_citations(
                 language_index=language_index,
                 qa_index=qa_index,
                 commitment_index=commitment_index,
+                peer_index=peer_index,
             )
             if resolved is None:
                 findings.append(
@@ -432,6 +438,7 @@ def _resolve_quote_citation(
     language_index: dict[str, LanguageCitation],
     qa_index: dict[str, QACitation],
     commitment_index: dict[str, CommitmentCitation],
+    peer_index: dict[str, PeerCitation],
 ) -> str | None:
     """Return the source text for ``cite_id`` or ``None`` when not found."""
     namespace = cite_id[:1]
@@ -444,6 +451,9 @@ def _resolve_quote_citation(
     if namespace == "K":
         commitment = commitment_index.get(cite_id)
         return commitment.source_text if commitment is not None else None
+    if namespace == "P":
+        peer = peer_index.get(cite_id)
+        return peer.text if peer is not None else None
     return None
 
 
@@ -453,6 +463,7 @@ def _namespace_label(cite_id: str) -> str:
         "L": "language change",
         "Q": "Q&A pair",
         "K": "management commitment",
+        "P": "peer commentary",
     }.get(cite_id[:1], "quote source")
 
 

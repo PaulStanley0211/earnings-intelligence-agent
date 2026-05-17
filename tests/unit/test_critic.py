@@ -396,3 +396,64 @@ def test_critic_rejects_unresolved_commitment_citation() -> None:
     update = critique_draft(state)
     findings = update.changes["critic_findings"]
     assert any(f.severity == "error" and "K3" in f.message for f in findings)
+
+
+def test_critic_resolves_unknown_p_citation() -> None:
+    """When the synthesizer cites [P0] but peer_context is empty, the critic
+    must flag the citation as unknown."""
+    from app.models.state import FilingEventSource
+
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000123-25-000001",
+            cik="0000123",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2025, 1, 1, tzinfo=UTC),
+            source_url="https://www.sec.gov/...",
+            source=FilingEventSource.UPLOAD,
+        ),
+        draft_note='Peer says "growth strong" [P0].',
+        peer_context=[],
+    )
+    update = critique_draft(state)
+    assert any(
+        f.severity == "error" and "P0" in f.message
+        for f in update.changes["critic_findings"]
+    )
+
+
+def test_critic_resolves_known_p_citation() -> None:
+    """A [P#] citation that resolves against peer_context with matching text is accepted."""
+    from app.models.state import FilingEventSource, PeerContextEntry
+
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000123-25-000001",
+            cik="0000123",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2025, 1, 1, tzinfo=UTC),
+            source_url="https://www.sec.gov/...",
+            source=FilingEventSource.UPLOAD,
+        ),
+        # Draft cites the peer text verbatim so the 90% similarity check passes.
+        draft_note="Cloud pricing pressure intensified during the quarter [P0].",
+        peer_context=[
+            PeerContextEntry(
+                peer_ticker="GOOGL",
+                kind="language_diff",
+                text="Cloud pricing pressure intensified during the quarter.",
+                source_filing_accession="x-1",
+                severity="major",
+            )
+        ],
+    )
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    # No error finding referencing P0 should remain.
+    assert all(f.severity != "error" or "P0" not in f.message for f in findings)

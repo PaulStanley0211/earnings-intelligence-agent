@@ -20,13 +20,18 @@ Identifier conventions:
 * ``K<n>`` - forward-looking management commitment from the transcript
   analyzer, numbered in iteration order of :attr:`AgentState.commitments`
   (1-based).
+* ``P<n>`` - peer context entry from the peer reader, numbered 0-based in
+  iteration order of :attr:`AgentState.peer_context`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.models.state import PeerContextEntry
 
 
 @dataclass(frozen=True)
@@ -260,6 +265,33 @@ def build_commitment_citations(
         )
         idx += 1
     return citations
+
+
+@dataclass(frozen=True)
+class PeerCitation:
+    """A resolved [P#] reference to a PeerContextEntry."""
+
+    identifier: str
+    peer_ticker: str
+    text: str
+    kind: str  # 'language_diff' | 'commitment'
+
+
+def build_peer_citations(
+    peer_context: list[PeerContextEntry],
+) -> list[PeerCitation]:
+    """Assign sequential P0, P1, ... ids to each peer context entry."""
+    cits: list[PeerCitation] = []
+    for idx, entry in enumerate(peer_context):
+        cits.append(
+            PeerCitation(
+                identifier=f"P{idx}",
+                peer_ticker=entry.peer_ticker,
+                text=entry.text,
+                kind=entry.kind,
+            )
+        )
+    return cits
 
 
 def _attr_or_key(payload: Any, key: str) -> Any:
