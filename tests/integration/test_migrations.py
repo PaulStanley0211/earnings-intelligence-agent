@@ -133,3 +133,22 @@ def test_phase3_migration_creates_pgvector_and_tables(clean_database: None) -> N
         )
         assert [row[0] for row in tables.all()] == ["filing_sections", "language_diffs"]
     engine.dispose()
+
+
+def test_migration_0008_creates_notes_table(clean_database: None) -> None:
+    """0008_phase5a_notes adds the notes table with the expected columns and index."""
+    command.upgrade(_alembic_config(), "head")
+
+    engine = create_engine(_sync_url(), future=True)
+    inspector = inspect(engine)
+
+    cols = [c["name"] for c in inspector.get_columns("notes")]
+    idx = [i["name"] for i in inspector.get_indexes("notes")]
+
+    assert "id" in cols
+    assert "filing_accession" in cols
+    assert "markdown_body" in cols
+    assert "prompt_template_sha" in cols
+    assert "ix_notes_ticker_created" in idx
+
+    engine.dispose()
