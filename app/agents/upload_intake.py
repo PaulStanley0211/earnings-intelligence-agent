@@ -13,6 +13,7 @@ The graph downstream is identical to the watcher-driven path; only the
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
@@ -20,6 +21,8 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
 from app.memory.schemas import (
+    FilingRecord,
+    NewFiling,
     NewUploadedDocument,
     UploadedDocumentRecord,
     WatchlistRecord,
@@ -43,9 +46,16 @@ class _SupportsUploadStorage(Protocol):
         self, ticker: str
     ) -> WatchlistRecord | None: ...
 
+    async def record_filing(self, *, filing: NewFiling) -> FilingRecord | None: ...
+
 
 def _filing_form(filing_type: str) -> FilingForm:
-    """Map the user-supplied filing-type string to the enum the graph uses."""
+    """Map the user-supplied filing-type string to the enum the graph uses.
+
+    Accepts every member of :class:`FilingForm`, including ``TRANSCRIPT``
+    (Phase 4B), so user-uploaded earnings-call transcripts route through
+    the transcript-analyzer track in the compiled graph.
+    """
     try:
         return FilingForm(filing_type)
     except ValueError as exc:
@@ -74,6 +84,18 @@ def _reject_if_rebind(
         )
 
 
+def _default_clock() -> datetime:
+    """Production clock used when callers omit ``clock=``.
+
+    Wall-clock ``datetime.now(UTC)`` is non-deterministic across runs, which
+    means ``filed_at`` reaches the synthesizer prompt with a fresh timestamp
+    on every invocation. That moves the SHA-keyed cassette key and breaks
+    replay. Production paths still want a real timestamp, so the default
+    stays here -- tests inject a frozen clock to keep cassette keys stable.
+    """
+    return datetime.now(UTC)
+
+
 async def intake_upload(
     *,
     ticker: str,
@@ -81,12 +103,19 @@ async def intake_upload(
     original_filename: str,
     parsed: ParsedDocument,
     repository: _SupportsUploadStorage,
+    clock: Callable[[], datetime] | None = None,
 ) -> FilingEvent:
     """Persist (or recover) the uploaded document and return its FilingEvent.
 
     The returned event always carries ``source=FilingEventSource.UPLOAD`` so
     downstream tracing distinguishes user-driven runs from watcher-driven ones.
+
+    ``clock`` is an injection seam for tests. Production callers omit it and
+    receive :func:`datetime.now` (UTC). Tests pass a frozen clock so the
+    synthesizer's ``{filed_at}`` substitution lands at a deterministic value
+    and cassette SHA keys stay stable across runs.
     """
+    now = clock if clock is not None else _default_clock
     ticker_upper = ticker.upper()
     form = _filing_form(filing_type)
     entry = await repository.get_watchlist_entry_by_ticker(ticker_upper)
@@ -124,13 +153,43 @@ async def intake_upload(
             _reject_if_rebind(winner, ticker_upper, form.value)
             upload_id = winner.upload_id
 
+    accession_number = f"upload-{upload_id}"
+    filed_at = now()
+    source_url = f"upload://{upload_id}"
+
+    # Mirror the upload onto the ``filings`` table. Downstream agents
+    # (transcript_analyzer, comparator, language_differ) persist rows
+    # whose ``filing_accession`` columns FK to ``filings.accession_number``;
+    # without a matching parent row those inserts hit a FK violation. The
+    # repository method is idempotent on ``accession_number``
+    # (ON CONFLICT DO NOTHING), so a retry or a duplicate-content path
+    # that reuses an existing ``upload_id`` is safe.
+    await repository.record_filing(
+        filing=NewFiling(
+            accession_number=accession_number,
+            cik=entry.cik,
+            ticker=ticker_upper,
+            form=form,
+            filed_at=filed_at,
+            # No SEC URL exists for user uploads. Reuse the ``upload://``
+            # scheme so audit tooling can distinguish upload-derived rows
+            # from watcher-derived rows by source_url prefix alone.
+            source_url=source_url,
+            # Unknown for user uploads: a transcript/PDF carries no
+            # canonical "report period end". The financial-extractor and
+            # comparator infer the period from XBRL or the transcript
+            # itself, not from this column.
+            report_period_end=None,
+        )
+    )
+
     event = FilingEvent(
-        accession_number=f"upload-{upload_id}",
+        accession_number=accession_number,
         cik=entry.cik,
         ticker=ticker_upper,
         form=form,
-        filed_at=datetime.now(UTC),
-        source_url=f"upload://{upload_id}",
+        filed_at=filed_at,
+        source_url=source_url,
         source=FilingEventSource.UPLOAD,
     )
     # Belt-and-suspenders: upstream Task 6 defaults source to WATCHER, so

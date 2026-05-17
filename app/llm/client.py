@@ -63,6 +63,24 @@ def _model_pricing(model: str) -> tuple[float, float]:
     return _PRICING_USD_PER_1K_TOKENS.get(model, _PRICING_USD_PER_1K_TOKENS["claude-opus-4-7"])
 
 
+# Models that have deprecated the ``temperature`` parameter at the Anthropic
+# API. Passing ``temperature`` to these models raises a 400 BadRequestError. We
+# still allow the prompt frontmatter to declare ``temperature: 0.0`` for
+# documentation and cassette-key stability, but we omit it from the API kwargs
+# for these specific models.
+_NO_TEMPERATURE_MODELS: frozenset[str] = frozenset(
+    {
+        "claude-opus-4-7",
+        "claude-opus-4-7[1m]",
+    }
+)
+
+
+def _supports_temperature(model: str) -> bool:
+    """Return ``False`` for models that have deprecated the temperature parameter."""
+    return model not in _NO_TEMPERATURE_MODELS
+
+
 class CostCapExceeded(RuntimeError):
     """Raised when a call would push today's spend past the configured cap."""
 
@@ -256,13 +274,15 @@ class LLMClient:
 
         # The Anthropic SDK types ``messages`` as a list of TypedDicts; our
         # internal call sites use plain dicts, which the SDK accepts verbatim.
-        api_response = self._client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system or "",
-            messages=cast("list[MessageParam]", messages),
-        )
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system or "",
+            "messages": cast("list[MessageParam]", messages),
+        }
+        if _supports_temperature(model):
+            create_kwargs["temperature"] = temperature
+        api_response = self._client.messages.create(**create_kwargs)
         text = _extract_text(api_response)
         input_tokens = int(api_response.usage.input_tokens)
         output_tokens = int(api_response.usage.output_tokens)
@@ -353,13 +373,18 @@ class LLMClient:
                 "already spent today."
             )
 
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system or "",
+            "messages": cast("list[MessageParam]", messages),
+        }
+        if _supports_temperature(model):
+            create_kwargs["temperature"] = temperature
+        # Wrap in a lambda so mypy can resolve the overload of
+        # ``messages.create`` against our dynamically built kwargs.
         api_response = await asyncio.to_thread(
-            self._client.messages.create,
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system or "",
-            messages=cast("list[MessageParam]", messages),
+            lambda: self._client.messages.create(**create_kwargs)
         )
         text = _extract_text(api_response)
         input_tokens = int(api_response.usage.input_tokens)

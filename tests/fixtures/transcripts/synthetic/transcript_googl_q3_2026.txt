@@ -1,0 +1,55 @@
+Operator: Welcome everyone to Alphabet's third quarter 2026 earnings conference call. At this time all participants are in a listen-only mode. After the speakers' presentation there will be a question and answer session. I would now like to hand the conference over to Jim Friedland, Director of Investor Relations.
+
+Jim Friedland: Thank you. Good afternoon and welcome everyone. With me today are Sundar Pichai, Chief Executive Officer of Alphabet and Google, and Anat Ashkenazi, Chief Financial Officer. Today's discussion contains forward-looking statements subject to risks and uncertainties detailed in our SEC filings. I will now turn the call over to Sundar.
+
+Sundar Pichai: Thanks Jim. Q3 was a strong quarter across Alphabet. Consolidated revenues were 102.7 billion dollars, up 16 percent. Google Services revenue was 78.4 billion dollars, and Google Cloud revenue reached 14.3 billion dollars, up 32 percent year over year with a Q3 operating margin of 19.8 percent. We continue to see meaningful momentum in our AI products. The Gemini app reached 480 million monthly active users in September, up from 340 million at the end of Q2. We are also seeing strong traction with Gemini in the enterprise, with active enterprise customers up more than 70 percent year over year. AI-driven features in Search, including AI Overviews and AI Mode, continue to deliver strong engagement, and we are not seeing any deterioration in monetisation rates from these formats.
+
+Anat Ashkenazi: Thank you Sundar. Operating income for the quarter was 31.6 billion dollars, with consolidated operating margin of 30.8 percent. Capital expenditure was 21.4 billion dollars, primarily directed at AI infrastructure. We now expect full-year 2026 capex to be approximately 88 billion dollars, up from our prior guidance of 80 billion. We expect 2027 capex to grow at a meaningfully slower pace than 2026, though we will provide formal 2027 guidance on our Q4 call. With that we will move to Q&A.
+
+Operator: Our first question is from Eric Sheridan of Goldman Sachs.
+
+Analyst: Eric Sheridan from Goldman Sachs. Sundar, can you give us a sense of how monetisation in AI Overviews and AI Mode compares to traditional blue-link search results, and whether there is any commercial query mix shift you are seeing as users adopt these formats?
+
+CEO: Sundar Pichai. Eric, monetisation in AI Overviews has converged with traditional Search and is now at parity on a per-query basis. AI Mode has reached approximately 85 percent of traditional Search monetisation and is still maturing. We are not yet ready to share the specific commercial query mix between the two formats. What I will say is that commercial intent queries continue to be the largest share of overall query volume and that share has been very stable.
+
+Operator: Our next question comes from Brian Nowak of Morgan Stanley.
+
+Analyst: Brian Nowak from Morgan Stanley. On the capex step-up to 88 billion, can you walk through what is driving the increase versus prior guidance, and how confident you are in the demand signals you are responding to?
+
+CFO: Anat Ashkenazi. Brian, the increase reflects three things: stronger than expected Cloud demand pull-through, expanded build for our internal Gemini training and serving fleet, and selective land and infrastructure pre-positioning in markets where we expect to build in 2027 and 2028. On demand signals, Cloud RPO grew 38 percent year over year and the weighted average duration of new bookings extended by approximately four months versus the prior year quarter. We are not building speculatively.
+
+Operator: Our next question comes from Doug Anmuth of JP Morgan.
+
+Analyst: Doug Anmuth from JP Morgan. On YouTube, can you give us an update on the Shorts monetisation gap closure trajectory and any specific commentary on Shorts ad RPMs?
+
+CEO: Sundar Pichai. Doug, Shorts monetisation continues to close the gap with in-stream. We are not breaking out specific RPM numbers today. The Shorts product is performing in line with our expectations and we are pleased with the engagement and advertiser uptake. We will share more detail on Shorts unit economics at our investor day next year.
+
+Operator: Our next question comes from Justin Post of Bank of America.
+
+Analyst: Justin Post from Bank of America. On Waymo, the rider trips growth has been very strong. Can you give us specific numbers on weekly trips and tell us when you expect Waymo to be in 25 cities?
+
+CEO: Sundar Pichai. Justin, Waymo is now serving over 350,000 paid rider trips per week across our launched markets, up from approximately 210,000 last quarter. We launched in three additional cities in Q3, bringing our total operating footprint to 11 cities. We expect to reach more than 20 cities by the end of 2027.
+
+Operator: Our next question comes from Mark Mahaney of Evercore.
+
+Analyst: Mark Mahaney from Evercore. Anat, on Google Cloud margins, you reported 19.8 percent operating margin this quarter. How should we think about the trajectory from here, particularly given the capex ramp will pull depreciation higher?
+
+CFO: Anat Ashkenazi. Mark, we expect Cloud operating margins to continue to expand on a full-year basis, though the trajectory will not be linear quarter to quarter as depreciation steps up. We expect full-year 2027 Cloud operating margin to be in the low 20 percent range. Beyond that we are not providing specific guidance.
+
+Operator: Our next question comes from Michael Nathanson of MoffettNathanson.
+
+Analyst: Michael Nathanson from MoffettNathanson. On regulatory matters, there have been several developments around the Search remedies case in the United States. Can you give us your latest read on potential business impact and timing?
+
+CEO: Sundar Pichai. Michael, we continue to engage constructively with the Department of Justice and we have appealed key aspects of the underlying ruling. I am not going to comment on potential business outcomes given the litigation is ongoing. Our focus operationally is to keep building great products for our users.
+
+Operator: Our next question comes from Ross Sandler of Barclays.
+
+Analyst: Ross Sandler from Barclays. On the consumer Gemini app, the 480 million MAU is impressive. Can you talk about the monetisation strategy and whether you expect Gemini consumer subscriptions to be a material revenue line in the next 12 months?
+
+CEO: Sundar Pichai. Ross, the consumer Gemini monetisation strategy has two legs: paid subscriptions under the Google AI Premium tier, and advertising within the conversational experience over time. We launched the Premium tier in May and we are seeing strong attach. We expect Gemini subscription revenue to cross 5 billion dollars on an annualised basis by the end of fiscal 2027. We are not yet ready to share specific timing on advertising-enabled Gemini formats.
+
+Operator: That concludes our Q&A. I will turn the call back to Sundar for closing remarks.
+
+Sundar Pichai: Thank you all. We look forward to speaking with you again on our Q4 call.
+
+Operator: This concludes today's call. You may disconnect.

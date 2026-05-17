@@ -1,0 +1,55 @@
+Operator: Good afternoon and welcome to the Microsoft fiscal first quarter 2026 earnings conference call. At this time all participants are in a listen-only mode. Following the prepared remarks we will conduct a question and answer session. I would now like to turn the call over to Brett Iversen, Vice President of Investor Relations. Please go ahead.
+
+Brett Iversen: Thank you operator and good afternoon everyone. On the call with me today are Satya Nadella, Chairman and Chief Executive Officer, and Amy Hood, Chief Financial Officer. Statements made during this call that are not statements of historical fact are forward-looking statements and are subject to the risks and uncertainties discussed in our most recent filings. I will now turn the call over to Satya.
+
+Satya Nadella: Thanks Brett. We had a strong start to fiscal 2026. Microsoft Cloud revenue grew 23 percent in constant currency to 41.2 billion dollars, driven by continued momentum across Azure, Microsoft 365, and our AI platform. Azure AI services revenue more than doubled year over year, and we now have over 78,000 paid Copilot for Microsoft 365 customers, up from 53,000 at the end of last fiscal year. Demand for our AI infrastructure continues to outpace supply, and we are accelerating our data-center buildout to meet that demand. We expect to bring an incremental 1.7 gigawatts of capacity online by the end of fiscal 2026, on top of what we delivered last year.
+
+Amy Hood: Thanks Satya. Revenue for the quarter was 67.8 billion dollars, up 14 percent. Operating income was 31.4 billion dollars and operating margin was 46.3 percent, down approximately 90 basis points year over year as we continue to invest aggressively in AI capacity. Capital expenditure including finance leases was 22.1 billion dollars in the quarter, and we now expect full-year capex to land in the 95 to 100 billion dollar range, up from our prior guidance of approximately 88 billion dollars. Free cash flow was 19.6 billion dollars. With that let us move to questions.
+
+Operator: Our first question comes from Brent Thill of Jefferies.
+
+Analyst: Brent Thill from Jefferies. Satya, can you give us a sense of how much of the Azure growth this quarter came specifically from AI workloads versus core compute? Investors are trying to triangulate the durability of the 39 percent Azure number.
+
+CEO: Satya Nadella. Brent, in the quarter approximately 14 points of Azure growth came from our AI services, with the remaining 25 points coming from core consumption growth across compute, storage, and data services. That mix has been remarkably consistent for the last three quarters. The core business is healthy on its own merits, and AI is genuinely additive demand from customers who in many cases are net new to Azure.
+
+Operator: Our next question comes from Keith Weiss of Morgan Stanley.
+
+Analyst: Keith Weiss from Morgan Stanley. Amy, the capex step-up from 88 billion to roughly 100 billion is significant. How should we think about the ROI window on that investment, and at what point would you slow the pace if returns are not materialising?
+
+CFO: Amy Hood. Keith, we look at it through two lenses. First, we already have signed contractual commitments from customers that cover a meaningful share of the capacity coming online over the next 18 months. Second, the per-rack economics of our next-generation AI hardware are improving with each cohort we deploy. We expect AI gross margins to expand by roughly 200 basis points in fiscal 2027 relative to fiscal 2026, even before accounting for any pricing actions. If demand softens we have the optionality to slow incremental buildout within a quarter, but right now the constraint is supply not demand.
+
+Operator: Our next question comes from Mark Moerdler of Bernstein.
+
+Analyst: Mark Moerdler from Bernstein. On the security side, can you talk about the integration of the Charm AI acquisition you closed in October? Specifically, when do you expect that technology to be embedded across the Defender product family, and what kind of revenue uplift are you modelling?
+
+CEO: Satya Nadella. Mark, we are pleased with the integration progress. The Charm AI team is now fully embedded within our Security division. We are not yet ready to disclose specific revenue impact numbers from the acquisition. What I can tell you is that we expect the underlying agentic capabilities to be generally available across Defender for Cloud, Defender for Endpoint, and Sentinel by the end of calendar 2026.
+
+Operator: Our next question comes from Mark Murphy of JP Morgan.
+
+Analyst: Mark Murphy from JP Morgan. There has been increasing competitive noise from Google and Amazon around custom silicon for AI training. How is Microsoft thinking about its own Maia and Cobalt roadmap, and are you seeing customers explicitly request alternatives to Nvidia today?
+
+CEO: Satya Nadella. Mark, our strategy on silicon is portfolio-based. We will continue to be the largest deployer of Nvidia GPUs at hyperscale, and we will continue to invest in Maia and Cobalt where the workload economics favor first-party silicon. On customer demand, we are seeing meaningful interest in Maia for inference workloads at large enterprise accounts, but most training is still pulling Nvidia. We will have more to share on the next-generation Maia roadmap at our Ignite conference next month.
+
+Operator: Our next question comes from Karl Keirstead of UBS.
+
+Analyst: Karl Keirstead from UBS. Amy, Commercial bookings were up 18 percent. Can you give us any granularity on duration or any large pull-forwards in the quarter?
+
+CFO: Amy Hood. Karl, the bookings strength was broad-based and not driven by any single mega-deal. Contract duration ticked up by approximately three months versus prior year as customers committed to longer Azure consumption agreements to lock in capacity. We do not expect Q2 bookings to maintain this growth rate on a like-for-like basis given the prior-year compare, but the underlying RPO trajectory remains very healthy. We will provide more color on RPO at our Q2 call in January.
+
+Operator: Our next question comes from Brad Sills of Bank of America.
+
+Analyst: Brad Sills from Bank of America. On Copilot for Microsoft 365, the 78,000 paid customer milestone is impressive. Can you talk about what is driving conversion from trial to paid right now, and specifically whether you are seeing any pricing pressure in mid-market accounts?
+
+CEO: Satya Nadella. Brad, conversion velocity has actually accelerated since we shipped the Copilot Studio and Copilot Pages updates in September. The single biggest driver is customers building their own workflow agents on top of the base Copilot license. On pricing, we have not made any list-price changes and we are not seeing material discount pressure in mid-market.
+
+Operator: Our final question comes from Kirk Materne of Evercore.
+
+Analyst: Kirk Materne from Evercore. Quick clarifying question on the gaming segment. Activision contribution to gaming revenue this quarter, and any expectation for when Game Pass will return to growth?
+
+CFO: Amy Hood. Kirk, gaming revenue was 5.1 billion dollars in the quarter, with Activision contributing approximately 1.9 billion of that. Game Pass subscriber growth resumed sequentially in the quarter, but we are not providing a specific re-acceleration timeline. We expect to share more on our gaming strategy at the next investor update.
+
+Operator: That concludes our Q&A session. I would like to turn the call back over to Satya for closing remarks.
+
+Satya Nadella: Thank you all for joining today. We feel very good about the start to the fiscal year, and we look forward to seeing many of you at Ignite next month. Thanks again.
+
+Operator: This concludes today's conference call. You may disconnect.

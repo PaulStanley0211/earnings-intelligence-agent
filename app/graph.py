@@ -1,25 +1,34 @@
 """LangGraph orchestrator.
 
-Phase 3 expands the pipeline to a fan-out / fan-in topology::
+Phase 4B widens the parallel block to three specialists::
 
     START
-      -> financial_extractor
-      -> [comparator, language_differ]   (parallel)
-      -> synthesizer                     (waits for both)
+      -> financial_extractor*
+      -> [comparator*, language_differ*, transcript_analyzer*]   (parallel)
+      -> synthesizer                                              (waits for all)
       -> critic
       -> (accepted | loop_exceeded -> END, rejected -> synthesizer)
+
+``*`` means each node self-skips on inapplicable filing types and yields an
+empty :class:`~app.models.state.StateUpdate`: ``financial_extractor``,
+``comparator``, and ``language_differ`` skip on ``TRANSCRIPT``;
+``transcript_analyzer`` skips on every non-``TRANSCRIPT`` form. The parallel
+block is therefore safe regardless of upload type because every node either
+contributes its owned fields or yields an empty update.
 
 Each node is a pure function of :class:`AgentState`. The session lifecycle
 is owned by the node closure: one session per invocation, committed on
 success and rolled back on any raised exception so concurrent runs cannot
 contaminate each other's transactions.
 
-LangGraph fans out from ``financial_extractor`` to both ``comparator`` and
-``language_differ`` automatically because both receive an edge from it. The
-``synthesizer`` receives edges from both specialists; LangGraph fires it once
-after both upstreams have delivered their partial state updates. The two
-specialists own disjoint ``AgentState`` fields (``comparisons`` and
-``language_diffs`` respectively) so the reducer never conflicts.
+LangGraph fans out from ``financial_extractor`` to ``comparator``,
+``language_differ``, and ``transcript_analyzer`` automatically because each
+receives an edge from it. The ``synthesizer`` receives an edge from every
+specialist; LangGraph fires it once after all upstreams have delivered
+their partial state updates. The three specialists own disjoint
+:class:`AgentState` fields (``comparisons``, ``language_diffs``, and the
+trio of ``qa_pairs`` / ``commitments`` / ``commitment_updates``
+respectively) so the reducer never conflicts.
 
 Entry points. The graph is started identically by both the EDGAR watcher and
 the ``POST /api/upload`` route: each constructs a :class:`FilingEvent` and
@@ -52,6 +61,8 @@ from app.agents.language_differ import OWNER as LANGUAGE_DIFFER_OWNER
 from app.agents.language_differ import diff_language
 from app.agents.synthesizer import OWNER as SYNTHESIZER_OWNER
 from app.agents.synthesizer import synthesize_note
+from app.agents.transcript_analyzer import OWNER as TRANSCRIPT_ANALYZER_OWNER
+from app.agents.transcript_analyzer import transcript_analyzer
 from app.llm.client import LLMClient
 from app.memory.repository import Repository
 from app.memory.schemas import NewConsensusEstimate
@@ -164,6 +175,34 @@ def _make_language_differ_node(
     return node
 
 
+def _make_transcript_analyzer_node(
+    *,
+    llm: LLMClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> NodeFn:
+    """Return the LangGraph node closure for the transcript analyzer.
+
+    The transcript analyzer commits its own session because its two Sonnet
+    calls advance the daily LLM spend counter via
+    :meth:`LLMClient.acomplete`; committing keeps that counter consistent
+    even when downstream nodes later raise.
+    """
+
+    async def node(state: AgentState) -> dict[str, Any]:
+        async with session_factory() as session:
+            try:
+                update = await transcript_analyzer(
+                    state, llm=llm, repository=Repository(session)
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+        return update.changes
+
+    return node
+
+
 def _make_synthesizer_node(
     *,
     llm: LLMClient,
@@ -215,12 +254,13 @@ def build_graph(
     llm: LLMClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compile the Phase 3 graph with parallel comparator / language_differ branches.
+    """Compile the Phase 4B graph with three parallel specialist branches.
 
     Topology::
 
-        START -> financial_extractor -> [comparator, language_differ] ->
-        synthesizer -> critic -> {synthesizer | END}
+        START -> financial_extractor ->
+            [comparator, language_differ, transcript_analyzer] ->
+            synthesizer -> critic -> {synthesizer | END}
 
     The synthesiser/critic loop is bounded by
     :data:`~app.agents.critic._MAX_CRITIC_ATTEMPTS`; when the budget is
@@ -228,10 +268,15 @@ def build_graph(
     routes to ``END`` so the note is held for manual review.
 
     LangGraph's built-in fan-in fires ``synthesizer`` exactly once after
-    both ``comparator`` and ``language_differ`` deliver their partial state
-    updates. The two nodes own disjoint :class:`AgentState` fields
-    (``comparisons`` and ``language_diffs``), so the reducer merges without
-    conflict.
+    ``comparator``, ``language_differ``, and ``transcript_analyzer`` all
+    deliver their partial state updates. The three nodes own disjoint
+    :class:`AgentState` fields (``comparisons``, ``language_diffs``, and
+    the ``qa_pairs`` / ``commitments`` / ``commitment_updates`` trio
+    respectively), so the reducer merges without conflict. Each node
+    self-skips on inapplicable filing types -- the financial trio on
+    ``TRANSCRIPT`` and the transcript analyzer on every other form -- so
+    the parallel block is safe for both EDGAR-filed and user-uploaded
+    sources.
     """
     builder: StateGraph[AgentState, Any, AgentState, AgentState] = StateGraph(AgentState)
     builder.add_node(  # type: ignore[call-overload]
@@ -253,6 +298,10 @@ def build_graph(
         ),
     )
     builder.add_node(  # type: ignore[call-overload]
+        TRANSCRIPT_ANALYZER_OWNER,
+        _make_transcript_analyzer_node(llm=llm, session_factory=session_factory),
+    )
+    builder.add_node(  # type: ignore[call-overload]
         SYNTHESIZER_OWNER,
         _make_synthesizer_node(llm=llm, session_factory=session_factory),
     )
@@ -263,8 +312,10 @@ def build_graph(
     builder.add_edge(START, FINANCIAL_EXTRACTOR_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, COMPARATOR_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, LANGUAGE_DIFFER_OWNER)
+    builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, TRANSCRIPT_ANALYZER_OWNER)
     builder.add_edge(COMPARATOR_OWNER, SYNTHESIZER_OWNER)
     builder.add_edge(LANGUAGE_DIFFER_OWNER, SYNTHESIZER_OWNER)
+    builder.add_edge(TRANSCRIPT_ANALYZER_OWNER, SYNTHESIZER_OWNER)
     builder.add_edge(SYNTHESIZER_OWNER, CRITIC_OWNER)
     builder.add_conditional_edges(
         CRITIC_OWNER,

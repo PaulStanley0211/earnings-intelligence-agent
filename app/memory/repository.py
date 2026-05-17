@@ -17,11 +17,12 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.models import (
+    Commitment,
     Comparison,
     ConsensusEstimate,
     DailyLLMSpend,
@@ -30,10 +31,13 @@ from app.memory.models import (
     FilingSection,
     FinancialFact,
     LanguageDiff,
+    QAPair,
     UploadedDocument,
     WatchlistEntry,
 )
 from app.memory.schemas import (
+    CommitmentRecord,
+    CommitmentStatus,
     ComparisonRecord,
     ConsensusEstimateRecord,
     FilingRecord,
@@ -41,6 +45,7 @@ from app.memory.schemas import (
     FilingStatus,
     FinancialFactRecord,
     LanguageDiffRecord,
+    NewCommitment,
     NewComparison,
     NewConsensusEstimate,
     NewFiling,
@@ -48,9 +53,11 @@ from app.memory.schemas import (
     NewFinancialFact,
     NewLanguageDiff,
     NewPollLog,
+    NewQAPair,
     NewUploadedDocument,
     PollLogRecord,
     PollStatus,
+    QAPairRecord,
     SectionKind,
     UploadedDocumentRecord,
     WatchlistRecord,
@@ -602,3 +609,160 @@ class Repository:
         stmt = select(UploadedDocument).where(UploadedDocument.upload_id == upload_id)
         row = (await self._session.execute(stmt)).scalar_one_or_none()
         return UploadedDocumentRecord.model_validate(row) if row is not None else None
+
+    # ---- qa pairs ----
+
+    async def add_qa_pairs(
+        self,
+        *,
+        filing_accession: str,
+        pairs: Sequence[NewQAPair],
+    ) -> Sequence[QAPairRecord]:
+        """Bulk-insert Q&A pairs; idempotent on ``(filing_accession, ordinal)``.
+
+        Uses ``ON CONFLICT DO NOTHING`` on the unique constraint so re-running
+        the transcript analyzer is safe. After the insert, a follow-up
+        ``SELECT`` returns the persisted DTOs for every supplied ordinal -
+        callers receive a consistent view regardless of whether a given row
+        was newly inserted or already present.
+        """
+        if not pairs:
+            return []
+        payload = [
+            {
+                "filing_accession": filing_accession,
+                "ordinal": p.ordinal,
+                "analyst_name": p.analyst_name,
+                "question_text": p.question_text,
+                "answer_text": p.answer_text,
+                "answer_class": p.answer_class.value,
+                "sha256_text": p.sha256_text,
+            }
+            for p in pairs
+        ]
+        insert_stmt = (
+            pg_insert(QAPair)
+            .values(payload)
+            .on_conflict_do_nothing(
+                constraint="uq_qa_pairs_filing_accession_ordinal",
+            )
+        )
+        await self._session.execute(insert_stmt)
+        ordinals = [p.ordinal for p in pairs]
+        select_stmt = (
+            select(QAPair)
+            .where(QAPair.filing_accession == filing_accession)
+            .where(QAPair.ordinal.in_(ordinals))
+            .order_by(QAPair.ordinal)
+        )
+        result = await self._session.execute(select_stmt)
+        return [QAPairRecord.model_validate(row) for row in result.scalars().all()]
+
+    async def list_qa_pairs_for_filing(
+        self, filing_accession: str
+    ) -> Sequence[QAPairRecord]:
+        """Return Q&A pairs for ``filing_accession`` in ascending ordinal order."""
+        stmt = (
+            select(QAPair)
+            .where(QAPair.filing_accession == filing_accession)
+            .order_by(QAPair.ordinal)
+        )
+        result = await self._session.execute(stmt)
+        return [QAPairRecord.model_validate(row) for row in result.scalars().all()]
+
+    # ---- commitments ----
+
+    async def add_commitments(
+        self,
+        *,
+        filing_accession: str,
+        ticker: str,
+        commitments: Sequence[NewCommitment],
+    ) -> Sequence[CommitmentRecord]:
+        """Bulk-insert commitments; idempotent on ``(filing_accession, source_quote)``.
+
+        The schema has no UNIQUE constraint covering this pair (the source
+        quote is free-form text), so idempotency is enforced in Python: the
+        method SELECTs existing rows for the supplied ``source_quote`` values
+        and only inserts the missing ones. A follow-up SELECT returns DTOs
+        for every supplied ``source_quote`` so the caller gets one row per
+        input regardless of whether it was new or already present.
+
+        Callers must commit. The caller is responsible for ensuring the
+        ``source_quote`` strings are stable verbatim transcript spans - any
+        whitespace or punctuation drift will defeat the dedupe.
+        """
+        if not commitments:
+            return []
+        quotes = [c.source_quote for c in commitments]
+        existing_stmt = select(Commitment.source_quote).where(
+            Commitment.filing_accession == filing_accession,
+            Commitment.source_quote.in_(quotes),
+        )
+        existing_result = await self._session.execute(existing_stmt)
+        existing_quotes = set(existing_result.scalars().all())
+
+        to_insert = [c for c in commitments if c.source_quote not in existing_quotes]
+        if to_insert:
+            payload = [
+                {
+                    "filing_accession": filing_accession,
+                    "ticker": ticker,
+                    "commitment_text": c.commitment_text,
+                    "target_period": c.target_period,
+                    "source_quote": c.source_quote,
+                }
+                for c in to_insert
+            ]
+            await self._session.execute(pg_insert(Commitment).values(payload))
+
+        select_stmt = (
+            select(Commitment)
+            .where(Commitment.filing_accession == filing_accession)
+            .where(Commitment.source_quote.in_(quotes))
+            .order_by(Commitment.id)
+        )
+        result = await self._session.execute(select_stmt)
+        return [CommitmentRecord.model_validate(row) for row in result.scalars().all()]
+
+    async def get_open_commitments(self, ticker: str) -> Sequence[CommitmentRecord]:
+        """Return ``status='open'`` commitments for ``ticker``, oldest first.
+
+        The cross-quarter reconciliation pass uses this to find prior
+        guidance that still needs a verdict.
+        """
+        stmt = (
+            select(Commitment)
+            .where(Commitment.ticker == ticker)
+            .where(Commitment.status == CommitmentStatus.OPEN.value)
+            .order_by(Commitment.created_at)
+        )
+        result = await self._session.execute(stmt)
+        return [CommitmentRecord.model_validate(row) for row in result.scalars().all()]
+
+    async def update_commitment_status(
+        self,
+        *,
+        commitment_id: int,
+        status: CommitmentStatus,
+        resolved_filing_accession: str | None,
+        resolved_reason: str | None,
+    ) -> None:
+        """Atomically rewrite a commitment's four mutable fields plus ``updated_at``.
+
+        This is the only place commitment rows are mutated. ``updated_at`` is
+        set to ``now()`` in the same UPDATE statement because the schema has
+        no trigger; relying on the DB clock keeps the timestamp consistent
+        with the row's ``created_at`` (also DB-driven).
+        """
+        stmt = (
+            update(Commitment)
+            .where(Commitment.id == commitment_id)
+            .values(
+                status=status.value,
+                resolved_filing_accession=resolved_filing_accession,
+                resolved_reason=resolved_reason,
+                updated_at=func.now(),
+            )
+        )
+        await self._session.execute(stmt)

@@ -1,0 +1,67 @@
+Operator: Good afternoon. My name is Joelle and I will be your conference operator today. At this time I would like to welcome everyone to the Meta Platforms fourth quarter 2026 earnings conference call. All lines have been placed on mute to prevent any background noise. After the speakers' remarks there will be a question and answer session. I would now like to turn the call over to Kenneth Dorell, Director of Investor Relations.
+
+Kenneth Dorell: Thank you. Good afternoon and welcome to Meta Platforms' fourth quarter and full year 2026 earnings conference call. Joining me today to discuss our results are Mark Zuckerberg, Chief Executive Officer, and Susan Li, Chief Financial Officer. Before we get started I would like to remind you that today's call may contain forward-looking statements that are subject to risks detailed in our SEC filings. I will now turn the call over to Mark.
+
+Mark Zuckerberg: Thanks Ken. We finished 2026 on a strong note. Total Q4 revenue was 53.8 billion dollars, up 19 percent year over year. Daily active people across our family of apps reached 3.51 billion, up from 3.43 billion last quarter. Our AI investments are paying off both in the core business and in the new AI experiences we are building. Meta AI now has over 1.1 billion monthly active users, and we continue to see strong engagement gains on Reels, Threads, and Feed from improvements to our recommendation systems. On the Reality Labs side, we shipped Quest 4 in November and early sell-through has been encouraging. We also passed 2 million Ray-Ban Meta smart glasses sold in 2026, more than double 2025.
+
+Susan Li: Thank you Mark. Operating income for Q4 was 22.1 billion dollars and operating margin was 41 percent. Capital expenditure for full-year 2026 was 71.2 billion dollars, and we now expect 2027 capex to be in the range of 95 to 105 billion dollars, reflecting continued investment in our AI infrastructure. Reality Labs operating loss for the quarter was 4.9 billion dollars, and we expect 2027 Reality Labs operating losses to grow meaningfully versus 2026. For Q1 2027 we are guiding revenue in the range of 48 to 51 billion dollars. Now we will move to Q&A.
+
+Operator: Our first question comes from Doug Anmuth of JP Morgan.
+
+Analyst: Doug Anmuth from JP Morgan. Mark, can you give us specifics on how Meta AI monetisation is progressing? Are you running ads in Meta AI today and if not when do you expect to start, and what is the early read on click-through behaviour in conversational surfaces?
+
+CEO: Mark Zuckerberg. Doug, we are not running ads in the main Meta AI assistant experience yet. We are running a small experimental ads format in the Meta AI search results surface, and the early data on engagement and quality is encouraging but we are deliberately moving slowly. We expect to begin a broader rollout of conversational ad formats in the second half of 2027. I am not going to give you specific click-through numbers from the test today.
+
+Operator: Our next question comes from Eric Sheridan of Goldman Sachs.
+
+Analyst: Eric Sheridan from Goldman Sachs. Susan, on the 2027 capex range of 95 to 105 billion, can you walk through the puts and takes that would land you at the high end versus the low end of the range?
+
+CFO: Susan Li. Eric, the primary driver of where we land in the range is how aggressively we pull forward 2028 capacity into 2027. If GPU supply allows and demand signals strengthen further from current levels we will lean toward the high end. If supply is tighter or if we see any softening in our internal training requirements we will land lower. A second factor is the mix of training versus inference infrastructure. Inference is a heavier cost per dollar of revenue but is also generating clearer returns today.
+
+Operator: Our next question comes from Brian Nowak of Morgan Stanley.
+
+Analyst: Brian Nowak from Morgan Stanley. On Reels monetisation, can you tell us where Reels ad load and pricing are versus Feed today and how much headroom you see going forward?
+
+CFO: Susan Li. Brian, Reels monetisation continues to close the gap with Feed. We are not breaking out the exact ratio today. What I can say is that pricing per impression on Reels has continued to grow at a faster pace than Feed for the last six quarters, driven by improvements in our ad ranking models and better advertiser fit. We will share more detail on this at our annual investor day.
+
+Operator: Our next question comes from Justin Post of Bank of America.
+
+Analyst: Justin Post from Bank of America. On Threads, the user growth has slowed sequentially. Can you give us the latest MAU number and talk about what you are doing to re-accelerate growth?
+
+CEO: Mark Zuckerberg. Justin, Threads ended the quarter with 410 million monthly active users, up from approximately 380 million at the end of Q3. Growth has moderated from the early viral phase but we are pleased with the engagement quality of the existing user base. We are focused on three areas to drive the next leg of growth: better topic-based discovery, deeper creator monetisation tools, and tighter integration with Instagram. We will continue to invest aggressively in Threads through 2027.
+
+Operator: Our next question comes from Mark Shmulik of Bernstein.
+
+Analyst: Mark Shmulik from Bernstein. On the Llama open-source strategy, are there any updates on the next major Llama release timing, and how do you think about the strategic trade-offs of open versus closed models as competitors move toward more proprietary approaches?
+
+CEO: Mark Zuckerberg. Mark, we continue to believe that open models are a strategic advantage for Meta and we are committed to the open-source approach. The next major Llama release is planned for the first half of 2027. On the strategic trade-off, we believe open models accelerate the broader ecosystem in ways that ultimately benefit our products and our partners, even as some competitors close down.
+
+Operator: Our next question comes from Ronald Josey of Citi.
+
+Analyst: Ronald Josey from Citi. On Reality Labs, the operating loss of 4.9 billion in Q4 and the comment that 2027 losses will grow meaningfully is a step up from prior commentary. Can you give us specific dollar guidance on 2027 Reality Labs losses and tell us when you expect Reality Labs to reach break-even?
+
+CFO: Susan Li. Ron, we are not providing specific dollar guidance on 2027 Reality Labs operating losses today. We will share more detail at the next investor update. On break-even timing, we do not see Reality Labs reaching segment break-even within the next several years given the scale of our investment in next-generation devices and AI compute for AR.
+
+Operator: Our next question comes from Mark Mahaney of Evercore.
+
+Analyst: Mark Mahaney from Evercore. On AI infrastructure efficiency, are you seeing the cost per token of inference continue to decline, and how much of your 2027 capex is dedicated to inference versus training?
+
+CEO: Mark Zuckerberg. Mark, cost per token of inference has come down meaningfully and continues to improve as we deploy more efficient hardware and optimise our serving stack. On the inference versus training split, we expect more than 60 percent of our 2027 AI capex to be directed at inference workloads, up from roughly 45 percent in 2026, reflecting the scale of consumer and advertiser inference demand.
+
+Operator: Our next question comes from Mike Levine of Pivotal Research.
+
+Analyst: Mike Levine from Pivotal Research. Susan, can you talk specifically about employee headcount? You ended the year up roughly 12 percent year over year. Should we expect a similar pace in 2027 or a step-down?
+
+CFO: Susan Li. Mike, we expect headcount growth in 2027 to be lower than 2026 in percentage terms, with the largest share of net additions concentrated in AI research, AI infrastructure, and Reality Labs. We are not providing a specific full-year headcount target.
+
+Operator: Our final question comes from Brent Thill of Jefferies.
+
+Analyst: Brent Thill from Jefferies. On the Ray-Ban Meta smart glasses, the 2 million unit milestone is encouraging. Can you tell us specifically how many units you expect to ship in 2027 and whether the next-generation device with display is on track for a 2027 launch?
+
+CEO: Mark Zuckerberg. Brent, we expect to ship more than 5 million Ray-Ban Meta smart glasses in 2027. On the next-generation device with integrated display, that product is on track for a launch in the second half of 2027. We will share more product detail closer to the announcement.
+
+Operator: That concludes the Q&A portion of today's call. Thank you for joining and you may now disconnect.
+
+Mark Zuckerberg: Thank you everyone. We look forward to a strong 2027.
+
+Operator: This concludes today's conference call.

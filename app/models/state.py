@@ -21,11 +21,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FilingForm(StrEnum):
-    """SEC filing forms the system understands."""
+    """SEC filing forms the system understands.
+
+    ``TRANSCRIPT`` is not a true SEC form; it labels user-uploaded earnings-call
+    transcripts so the upload-driven path can route the document through the
+    Phase 4B transcript analyzer instead of the XBRL-financials track.
+    """
 
     FORM_10K = "10-K"
     FORM_10Q = "10-Q"
     FORM_8K = "8-K"
+    TRANSCRIPT = "TRANSCRIPT"
 
 
 class FilingEventSource(StrEnum):
@@ -53,6 +59,78 @@ class FilingEvent(BaseModel):
         default=FilingEventSource.WATCHER,
         description="Whether this event came from the EDGAR watcher or a user upload.",
     )
+
+
+# ---- Phase 4B: transcript-analyzer shared enums ----
+#
+# ``AnswerClass`` and ``CommitmentStatus`` are shared across the in-graph
+# ``AgentState`` (this module) and the DB-boundary DTOs in
+# ``app.memory.schemas``. They live here so the state layer does not depend
+# on the memory layer (``app.memory.schemas`` already imports ``FilingForm``
+# from this module, so the reverse import would be circular). The schemas
+# module re-exports both enums for backward-compatible imports.
+
+
+class AnswerClass(StrEnum):
+    """Classification the analyzer assigns to a Q&A answer's directness."""
+
+    DIRECT = "direct"
+    PARTIAL = "partial"
+    DEFLECTED = "deflected"
+
+
+class CommitmentStatus(StrEnum):
+    """Lifecycle states for a management commitment.
+
+    Commitments are inserted as ``OPEN`` and only the reconciliation pass
+    flips them to ``MET`` / ``MISSED`` / ``STILL_OPEN``.
+    """
+
+    OPEN = "open"
+    MET = "met"
+    MISSED = "missed"
+    STILL_OPEN = "still_open"
+
+
+class QAPairPayload(BaseModel):
+    """One extracted analyst Q&A pair carried in :class:`AgentState`.
+
+    This is the in-graph state payload that flows across LangGraph node
+    boundaries; the ORM row equivalent is :class:`app.memory.models.QAPair`.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ordinal: int = Field(..., ge=1, description="1-based position within the transcript.")
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: AnswerClass
+    sha256_text: str = Field(..., min_length=64, max_length=64)
+
+
+class CommitmentExtracted(BaseModel):
+    """One forward-looking management commitment extracted from the current transcript.
+
+    Pre-persistence representation: no DB id yet. Persisted rows live in
+    :class:`app.memory.models.Commitment`.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    commitment_text: str
+    target_period: str | None
+    source_quote: str = Field(..., description="Verbatim transcript span; anchor for [K#] cites.")
+
+
+class CommitmentStatusUpdate(BaseModel):
+    """A reconciliation verdict the analyzer produces for one prior open commitment."""
+
+    model_config = ConfigDict(frozen=True)
+
+    commitment_id: int = Field(..., description="DB id from the ``commitments`` table.")
+    new_status: CommitmentStatus
+    reason: str = Field(..., description="Short justification text from the reconcile call.")
 
 
 class CriticVerdict(StrEnum):
@@ -103,7 +181,10 @@ class AgentState(BaseModel):
     financials: dict[str, Any] | None = None
     comparisons: dict[str, Any] | None = None
     language_diffs: list[dict[str, Any]] = Field(default_factory=list)
-    qa_pairs: list[dict[str, Any]] = Field(default_factory=list)
+    # ---- Phase 4B: transcript-analyzer outputs ----
+    qa_pairs: list[QAPairPayload] = Field(default_factory=list)
+    commitments: list[CommitmentExtracted] = Field(default_factory=list)
+    commitment_updates: list[CommitmentStatusUpdate] = Field(default_factory=list)
     peer_context: dict[str, Any] | None = None
 
     # ---- Synthesizer + critic loop ----
@@ -121,10 +202,14 @@ _FIELD_OWNERS: dict[str, frozenset[str]] = {
     "financial_extractor": frozenset({"financials", "cost_usd"}),
     "comparator": frozenset({"comparisons", "cost_usd"}),
     "language_differ": frozenset({"language_diffs", "cost_usd"}),
-    "transcript_analyzer": frozenset({"qa_pairs", "cost_usd"}),
-    "answer_classifier": frozenset({"qa_pairs", "cost_usd"}),
-    "commitment_extractor": frozenset({"qa_pairs", "cost_usd"}),
-    "commitment_resolver": frozenset({"qa_pairs", "cost_usd"}),
+    # Phase 4B: transcript_analyzer is a single node that owns Q&A pairs,
+    # newly-extracted commitments, and reconciliation status updates for prior
+    # open commitments. The earlier placeholder split (answer_classifier /
+    # commitment_extractor / commitment_resolver) is collapsed per the
+    # 2026-05-16 Phase 4B design spec.
+    "transcript_analyzer": frozenset(
+        {"qa_pairs", "commitments", "commitment_updates", "cost_usd"}
+    ),
     "peer_reader": frozenset({"peer_context", "cost_usd"}),
     "synthesizer": frozenset({"draft_note", "cost_usd"}),
     "critic": frozenset(

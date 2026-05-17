@@ -15,6 +15,11 @@ Identifier conventions:
   :attr:`AgentState.comparisons` ``metrics``.
 * ``L<n>`` - language-diff entry from the language differ's per-section
   summaries, numbered in iteration order across sections.
+* ``Q<n>`` - analyst Q&A pair from the transcript analyzer, numbered in
+  iteration order of :attr:`AgentState.qa_pairs` (1-based).
+* ``K<n>`` - forward-looking management commitment from the transcript
+  analyzer, numbered in iteration order of :attr:`AgentState.commitments`
+  (1-based).
 """
 
 from __future__ import annotations
@@ -155,6 +160,115 @@ def build_language_citations(
             )
             idx += 1
     return citations
+
+
+@dataclass(frozen=True)
+class QACitation:
+    """One numbered analyst Q&A pair the critic can resolve by id.
+
+    The critic accepts a quoted phrase that matches either the question or
+    the answer text within the standard 90% character-similarity tolerance;
+    :attr:`source_text` concatenates both with a separator so a single
+    membership/similarity check covers either side of the exchange.
+    """
+
+    identifier: str
+    ordinal: int
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: str
+
+    @property
+    def source_text(self) -> str:
+        """Combined question + answer text used for similarity matching."""
+        return f"{self.question_text}\n{self.answer_text}"
+
+
+@dataclass(frozen=True)
+class CommitmentCitation:
+    """One numbered management commitment the critic can resolve by id.
+
+    :attr:`source_quote` is the verbatim transcript span the synthesiser
+    must quote (or trim/paraphrase to <=15 words while staying within the
+    90% similarity tolerance).
+    """
+
+    identifier: str
+    commitment_text: str
+    target_period: str | None
+    source_quote: str
+
+    @property
+    def source_text(self) -> str:
+        """The verbatim quote a draft must match for similarity checks."""
+        return self.source_quote
+
+
+def build_qa_citations(
+    qa_pairs: list[Any] | None,
+) -> list[QACitation]:
+    """Numbered Q&A citations from the transcript analyzer's payloads.
+
+    Accepts either :class:`app.models.state.QAPairPayload` instances or
+    plain dicts so the function stays usable from tests that materialise
+    fixtures without the full Pydantic model.
+    """
+    payloads = qa_pairs or []
+    citations: list[QACitation] = []
+    for idx, payload in enumerate(payloads, start=1):
+        question = _attr_or_key(payload, "question_text")
+        answer = _attr_or_key(payload, "answer_text")
+        if not question and not answer:
+            continue
+        citations.append(
+            QACitation(
+                identifier=f"Q{idx}",
+                ordinal=int(_attr_or_key(payload, "ordinal") or idx),
+                analyst_name=_str_or_none(_attr_or_key(payload, "analyst_name")),
+                question_text=str(question or ""),
+                answer_text=str(answer or ""),
+                answer_class=str(_attr_or_key(payload, "answer_class") or ""),
+            )
+        )
+    return citations
+
+
+def build_commitment_citations(
+    commitments: list[Any] | None,
+) -> list[CommitmentCitation]:
+    """Numbered commitment citations from the transcript analyzer's payloads.
+
+    Accepts either :class:`app.models.state.CommitmentExtracted` instances
+    or plain dicts. Entries without a ``source_quote`` are skipped because
+    the citation cannot be anchored to a verbatim span.
+    """
+    payloads = commitments or []
+    citations: list[CommitmentCitation] = []
+    idx = 1
+    for payload in payloads:
+        source_quote = _attr_or_key(payload, "source_quote")
+        if not source_quote:
+            continue
+        citations.append(
+            CommitmentCitation(
+                identifier=f"K{idx}",
+                commitment_text=str(_attr_or_key(payload, "commitment_text") or ""),
+                target_period=_str_or_none(_attr_or_key(payload, "target_period")),
+                source_quote=str(source_quote),
+            )
+        )
+        idx += 1
+    return citations
+
+
+def _attr_or_key(payload: Any, key: str) -> Any:
+    """Read ``key`` from a Pydantic-model-like or mapping-like payload."""
+    if payload is None:
+        return None
+    if isinstance(payload, dict):
+        return payload.get(key)
+    return getattr(payload, key, None)
 
 
 def _language_cite_text(change_type: str, diff: dict[str, Any]) -> str:

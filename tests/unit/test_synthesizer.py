@@ -16,14 +16,25 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.agents.citations import LanguageCitation
-from app.agents.synthesizer import OWNER, _render_language_block, synthesize_note
+from app.agents.citations import CommitmentCitation, LanguageCitation, QACitation
+from app.agents.synthesizer import (
+    _PROMPT_FULL,
+    OWNER,
+    _render_commitments_block,
+    _render_language_block,
+    _render_qa_pairs_block,
+    _select_prompt,
+    synthesize_note,
+)
 from app.llm.client import LLMClient
 from app.models.state import (
     AgentState,
+    AnswerClass,
+    CommitmentExtracted,
     CriticFinding,
     FilingEvent,
     FilingForm,
+    QAPairPayload,
 )
 
 
@@ -196,3 +207,140 @@ def test_synthesizer_renders_language_diffs_block_when_present() -> None:
 def test_synthesizer_renders_no_language_changes_message_when_empty() -> None:
     """_render_language_block returns a human-readable fallback for empty input."""
     assert "no language changes" in _render_language_block([]).lower()
+
+
+def _qa_pair(ordinal: int, question: str, answer: str) -> QAPairPayload:
+    return QAPairPayload(
+        ordinal=ordinal,
+        analyst_name="Brent Thill",
+        question_text=question,
+        answer_text=answer,
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="a" * 64,
+    )
+
+
+def test_select_prompt_prefers_full_when_transcript_present() -> None:
+    """_select_prompt returns the full prompt as soon as QA or commitments exist."""
+    state = _state()
+    assert _select_prompt(state) == "synthesizer/numbers_v1"
+
+    state_with_lang = _state()
+    state_with_lang = state_with_lang.model_copy(
+        update={"language_diffs": [{"section": "mda", "diffs": []}]}
+    )
+    assert _select_prompt(state_with_lang) == "synthesizer/numbers_with_language_v1"
+
+    state_with_qa = _state().model_copy(
+        update={
+            "qa_pairs": [_qa_pair(1, "q", "a")],
+        }
+    )
+    assert _select_prompt(state_with_qa) == _PROMPT_FULL
+
+    state_with_commitment = _state().model_copy(
+        update={
+            "commitments": [
+                CommitmentExtracted(
+                    commitment_text="c",
+                    target_period="Q3 2026",
+                    source_quote="verbatim quote that anchors the commitment",
+                )
+            ]
+        }
+    )
+    assert _select_prompt(state_with_commitment) == _PROMPT_FULL
+
+
+def test_synthesizer_renders_qa_pairs_block() -> None:
+    """_render_qa_pairs_block emits a Q#/A# pair per citation."""
+    citations = [
+        QACitation(
+            identifier="Q1",
+            ordinal=1,
+            analyst_name="Brent Thill",
+            question_text="How should we think about Azure margins next quarter?",
+            answer_text="We expect margins to remain stable around 47 percent.",
+            answer_class="direct",
+        ),
+        QACitation(
+            identifier="Q2",
+            ordinal=2,
+            analyst_name=None,
+            question_text="FX headwinds?",
+            answer_text="Two points next quarter.",
+            answer_class="partial",
+        ),
+    ]
+    rendered = _render_qa_pairs_block(citations)
+    assert "Q1 (analyst: Brent Thill):" in rendered
+    assert "A1 [direct]:" in rendered
+    assert "Q2 (analyst: unknown):" in rendered
+    assert "A2 [partial]:" in rendered
+
+
+def test_synthesizer_renders_commitments_block() -> None:
+    """_render_commitments_block emits one K# line per commitment."""
+    citations = [
+        CommitmentCitation(
+            identifier="K1",
+            commitment_text="Azure margin expansion of 100 bps next quarter.",
+            target_period="Q3 2026",
+            source_quote=(
+                "we expect Azure margin expansion of 100 basis points next quarter"
+            ),
+        ),
+        CommitmentCitation(
+            identifier="K2",
+            commitment_text="Operating margin will reach 45 percent for the full year.",
+            target_period=None,
+            source_quote="operating margin will reach 45 percent for the full year",
+        ),
+    ]
+    rendered = _render_commitments_block(citations)
+    assert "K1 (target: Q3 2026):" in rendered
+    assert "K2 (target: not specified):" in rendered
+    assert '(source: "operating margin will reach' in rendered
+
+
+def test_render_blocks_emit_fallback_when_empty() -> None:
+    """Empty inputs produce a human-readable placeholder string."""
+    assert "no analyst" in _render_qa_pairs_block([]).lower()
+    assert "no management" in _render_commitments_block([]).lower()
+
+
+async def test_synthesizer_picks_full_v1_when_transcript_data_present(
+    llm_for_synth: tuple[LLMClient, _StubAnthropic],
+) -> None:
+    """When qa_pairs or commitments exist the full prompt is selected and rendered."""
+    llm, stub = llm_for_synth
+    base = _state()
+    state = base.model_copy(
+        update={
+            "qa_pairs": [
+                _qa_pair(
+                    1,
+                    "How should we think about Azure margins next quarter?",
+                    "We expect margins to remain stable around 47 percent.",
+                )
+            ],
+            "commitments": [
+                CommitmentExtracted(
+                    commitment_text=(
+                        "Azure margin expansion of 100 basis points next quarter."
+                    ),
+                    target_period="Q3 2026",
+                    source_quote=(
+                        "we expect Azure margin expansion of 100 basis points next quarter"
+                    ),
+                )
+            ],
+        }
+    )
+    await synthesize_note(state, llm=llm, repository=_StubRepository())
+    assert stub.last_messages is not None
+    body = stub.last_messages[0]["content"]
+    assert 'source type="qa_pairs"' in body
+    assert 'source type="commitments"' in body
+    assert "Q1 (analyst: Brent Thill):" in body
+    assert "K1 (target: Q3 2026):" in body

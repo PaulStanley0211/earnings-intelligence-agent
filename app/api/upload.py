@@ -8,6 +8,7 @@ into a PDF/text parser, a 415 short-circuits before we even read the body.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any, Final, Literal
 from uuid import uuid4
@@ -29,10 +30,30 @@ from app.tools.documents import (
     parse_plain_text,
 )
 
+
+def get_intake_clock() -> Callable[[], datetime]:
+    """FastAPI dependency for the intake clock.
+
+    Production resolves to wall-clock UTC; tests override via
+    ``app.dependency_overrides[get_intake_clock]`` to pin a fixed timestamp
+    so the synthesizer prompt's ``{filed_at}`` substitution keeps the cassette
+    SHA key stable across runs.
+    """
+    return lambda: datetime.now(UTC)
+
 router = APIRouter(prefix="/api", tags=["upload"])
 
 _ACCEPTED_PDF_TYPES: Final[set[str]] = {"application/pdf"}
 _ACCEPTED_TEXT_TYPES: Final[set[str]] = {"text/plain"}
+
+# Allowlist for the ``filing_type`` form field. Mirrors
+# :class:`app.models.state.FilingForm` exactly; expressing it as a
+# ``Literal`` here lets FastAPI return 422 on unknown values before the
+# request body is even parsed, so we never burn parser work on a request
+# that the intake validator would reject anyway. ``TRANSCRIPT`` covers
+# user-uploaded earnings-call transcripts routed through the Phase 4B
+# transcript-analyzer track.
+FilingTypeForm = Literal["8-K", "10-Q", "10-K", "TRANSCRIPT"]
 
 
 class AnalysisPayload(BaseModel):
@@ -92,12 +113,13 @@ def _parse_or_422(content_type: str | None, raw: bytes) -> ParsedDocument:
 async def post_upload(
     request: Request,
     ticker: Annotated[str, Form()],
-    filing_type: Annotated[str, Form()],
+    filing_type: Annotated[FilingTypeForm, Form()],
     file: Annotated[UploadFile, File()],
     session: Annotated[AsyncSession, Depends(get_session)],
     graph: Annotated[
         CompiledStateGraph[Any, Any, Any, Any], Depends(get_compiled_graph)
     ],
+    intake_clock: Annotated[Callable[[], datetime], Depends(get_intake_clock)],
 ) -> UploadResponse:
     """Run the full Phase 1-3 pipeline against the uploaded document.
 
@@ -147,11 +169,22 @@ async def post_upload(
             original_filename=file.filename or "upload.bin",
             parsed=parsed,
             repository=repository,
+            clock=intake_clock,
         )
     except ValueError as exc:
         # Unknown ticker or unsupported filing_type. ``get_session`` rolls
         # back automatically when this propagates.
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Commit the uploaded_documents INSERT before the graph runs. Each graph
+    # node opens its OWN session via the process-wide session factory; until
+    # this commit lands, those sessions are isolated from the still-pending
+    # write on the route's session and the transcript_analyzer's
+    # ``get_uploaded_document`` lookup returns ``None`` (the node then
+    # silently self-skips). The row is append-only per CLAUDE.md, so it is
+    # safe to keep the row even if ``graph.ainvoke`` raises below; the
+    # caller's error response is consistent with the rest of the system.
+    await session.commit()
 
     trace_id = uuid4().hex
     initial_state = AgentState(
