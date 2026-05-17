@@ -19,7 +19,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.models.state import (
     AnswerClass as AnswerClass,
@@ -461,3 +461,52 @@ class NoteRead(BaseModel):
     prompt_template_sha: str
     critic_attempts: int
     created_at: datetime
+
+
+# ---- Phase 5B: peer context DTOs ----
+
+
+class PeerCreate(BaseModel):
+    """Pre-persistence peer mapping."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    peer_ticker: str
+    source: str = "curated"
+
+    @field_validator("peer_ticker")
+    @classmethod
+    def _no_self_reference(cls, v: str, info: ValidationInfo) -> str:
+        ticker = info.data.get("ticker")
+        if ticker is not None and v == ticker:
+            raise ValueError("peer_ticker must differ from ticker")
+        return v
+
+
+class PeerLanguageDiffSignal(BaseModel):
+    """One major language diff signal from a peer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    severity: str
+    source_filing_accession: str
+
+
+class PeerCommitmentSignal(BaseModel):
+    """One open commitment signal from a peer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    source_filing_accession: str
+
+
+class PeerSignals(BaseModel):
+    """Bundle of peer signals returned by the repository."""
+
+    model_config = ConfigDict(frozen=True)
+
+    language_diffs: list[PeerLanguageDiffSignal] = Field(default_factory=list)
+    commitments: list[PeerCommitmentSignal] = Field(default_factory=list)

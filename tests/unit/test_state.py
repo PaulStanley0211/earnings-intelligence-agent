@@ -274,3 +274,19 @@ def test_note_writer_owns_persisted_note_id() -> None:
 def test_critic_cannot_set_persisted_note_id() -> None:
     with pytest.raises(ValidationError, match="cannot mutate fields"):
         StateUpdate(owner="critic", changes={"persisted_note_id": 1})
+
+
+# ---- Phase 5B: peer reader state field ----
+
+
+def test_peer_context_entry_minimal_shape() -> None:
+    from app.models.state import PeerContextEntry
+
+    entry = PeerContextEntry(
+        peer_ticker="GOOGL",
+        kind="commitment",
+        text="We expect cloud growth to accelerate next quarter.",
+        source_filing_accession="0000123-25-000002",
+    )
+    assert entry.kind == "commitment"
+    assert entry.severity is None

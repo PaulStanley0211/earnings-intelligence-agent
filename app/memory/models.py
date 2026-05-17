@@ -568,3 +568,26 @@ class Note(Base):
     __table_args__ = (
         Index("ix_notes_ticker_created", "ticker", "created_at"),
     )
+
+
+class Peer(Base):
+    """A curated ``(ticker, peer_ticker)`` mapping for the peer reader.
+
+    Append-only via upsert. The ``source`` column is forward-compatible for
+    auto-discovery; currently constrained to ``'curated'``.
+    """
+
+    __tablename__ = "peers"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    peer_ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="curated")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("ticker <> peer_ticker", name="peers_no_self_reference"),
+        CheckConstraint("source IN ('curated')", name="peers_source_valid"),
+        Index("ix_peers_ticker", "ticker"),
+    )

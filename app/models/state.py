@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -133,6 +133,23 @@ class CommitmentStatusUpdate(BaseModel):
     reason: str = Field(..., description="Short justification text from the reconcile call.")
 
 
+class PeerContextEntry(BaseModel):
+    """One peer signal surfaced by `peer_reader` for use in the synthesizer.
+
+    `kind='language_diff'` rows surface MD&A/risk-factor language changes from
+    the peer's most recent 10-K or 10-Q. `kind='commitment'` rows surface
+    open commitments from the peer's most recent transcript.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    peer_ticker: str
+    kind: Literal["language_diff", "commitment"]
+    text: str
+    source_filing_accession: str
+    severity: Literal["major", "minor"] | None = None
+
+
 class CriticVerdict(StrEnum):
     """Outcome of a critic pass over a draft note."""
 
@@ -185,7 +202,7 @@ class AgentState(BaseModel):
     qa_pairs: list[QAPairPayload] = Field(default_factory=list)
     commitments: list[CommitmentExtracted] = Field(default_factory=list)
     commitment_updates: list[CommitmentStatusUpdate] = Field(default_factory=list)
-    peer_context: dict[str, Any] | None = None
+    peer_context: list[PeerContextEntry] = Field(default_factory=list)
 
     # ---- Synthesizer + critic loop ----
     draft_note: str | None = None

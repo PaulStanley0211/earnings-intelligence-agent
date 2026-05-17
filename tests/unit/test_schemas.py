@@ -48,6 +48,26 @@ def test_new_language_diff_defaults_optional_fields():
     assert row.similarity is None
 
 
+# ---- Phase 5B: peer context DTOs ----
+
+
+def test_peer_create_validates_no_self_reference() -> None:
+    import pytest
+
+    from app.memory.schemas import PeerCreate
+
+    with pytest.raises(ValueError):
+        PeerCreate(ticker="MSFT", peer_ticker="MSFT")
+
+
+def test_peer_signals_defaults_to_empty() -> None:
+    from app.memory.schemas import PeerSignals
+
+    sig = PeerSignals(language_diffs=[], commitments=[])
+    assert sig.language_diffs == []
+    assert sig.commitments == []
+
+
 def test_filing_section_record_from_attributes():
     class _Stub:
         id = 1
