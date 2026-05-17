@@ -8,6 +8,7 @@ into a PDF/text parser, a 415 short-circuits before we even read the body.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Annotated, Any, Final, Literal
 from uuid import uuid4
@@ -28,6 +29,17 @@ from app.tools.documents import (
     parse_pdf,
     parse_plain_text,
 )
+
+
+def get_intake_clock() -> Callable[[], datetime]:
+    """FastAPI dependency for the intake clock.
+
+    Production resolves to wall-clock UTC; tests override via
+    ``app.dependency_overrides[get_intake_clock]`` to pin a fixed timestamp
+    so the synthesizer prompt's ``{filed_at}`` substitution keeps the cassette
+    SHA key stable across runs.
+    """
+    return lambda: datetime.now(UTC)
 
 router = APIRouter(prefix="/api", tags=["upload"])
 
@@ -107,6 +119,7 @@ async def post_upload(
     graph: Annotated[
         CompiledStateGraph[Any, Any, Any, Any], Depends(get_compiled_graph)
     ],
+    intake_clock: Annotated[Callable[[], datetime], Depends(get_intake_clock)],
 ) -> UploadResponse:
     """Run the full Phase 1-3 pipeline against the uploaded document.
 
@@ -156,6 +169,7 @@ async def post_upload(
             original_filename=file.filename or "upload.bin",
             parsed=parsed,
             repository=repository,
+            clock=intake_clock,
         )
     except ValueError as exc:
         # Unknown ticker or unsupported filing_type. ``get_session`` rolls

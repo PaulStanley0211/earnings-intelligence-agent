@@ -13,6 +13,7 @@ The graph downstream is identical to the watcher-driven path; only the
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
@@ -83,6 +84,18 @@ def _reject_if_rebind(
         )
 
 
+def _default_clock() -> datetime:
+    """Production clock used when callers omit ``clock=``.
+
+    Wall-clock ``datetime.now(UTC)`` is non-deterministic across runs, which
+    means ``filed_at`` reaches the synthesizer prompt with a fresh timestamp
+    on every invocation. That moves the SHA-keyed cassette key and breaks
+    replay. Production paths still want a real timestamp, so the default
+    stays here -- tests inject a frozen clock to keep cassette keys stable.
+    """
+    return datetime.now(UTC)
+
+
 async def intake_upload(
     *,
     ticker: str,
@@ -90,12 +103,19 @@ async def intake_upload(
     original_filename: str,
     parsed: ParsedDocument,
     repository: _SupportsUploadStorage,
+    clock: Callable[[], datetime] | None = None,
 ) -> FilingEvent:
     """Persist (or recover) the uploaded document and return its FilingEvent.
 
     The returned event always carries ``source=FilingEventSource.UPLOAD`` so
     downstream tracing distinguishes user-driven runs from watcher-driven ones.
+
+    ``clock`` is an injection seam for tests. Production callers omit it and
+    receive :func:`datetime.now` (UTC). Tests pass a frozen clock so the
+    synthesizer's ``{filed_at}`` substitution lands at a deterministic value
+    and cassette SHA keys stay stable across runs.
     """
+    now = clock if clock is not None else _default_clock
     ticker_upper = ticker.upper()
     form = _filing_form(filing_type)
     entry = await repository.get_watchlist_entry_by_ticker(ticker_upper)
@@ -134,7 +154,7 @@ async def intake_upload(
             upload_id = winner.upload_id
 
     accession_number = f"upload-{upload_id}"
-    filed_at = datetime.now(UTC)
+    filed_at = now()
     source_url = f"upload://{upload_id}"
 
     # Mirror the upload onto the ``filings`` table. Downstream agents
