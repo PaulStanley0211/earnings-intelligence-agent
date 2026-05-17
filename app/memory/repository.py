@@ -31,6 +31,7 @@ from app.memory.models import (
     FilingSection,
     FinancialFact,
     LanguageDiff,
+    Note,
     QAPair,
     UploadedDocument,
     WatchlistEntry,
@@ -55,6 +56,8 @@ from app.memory.schemas import (
     NewPollLog,
     NewQAPair,
     NewUploadedDocument,
+    NoteCreate,
+    NoteRead,
     PollLogRecord,
     PollStatus,
     QAPairRecord,
@@ -766,3 +769,62 @@ class Repository:
             )
         )
         await self._session.execute(stmt)
+
+    # ---- notes ----
+
+    async def insert_note(self, note: NoteCreate) -> int:
+        """Idempotent note insert keyed by ``filing_accession``.
+
+        Returns the id of the newly-inserted row, or the id of the existing
+        row when a note for the same filing already exists. This preserves
+        the append-only memory rule: re-running the synthesizer for the same
+        filing does not overwrite the accepted note.
+        """
+        stmt = (
+            pg_insert(Note)
+            .values(
+                filing_accession=note.filing_accession,
+                ticker=note.ticker,
+                markdown_body=note.markdown_body,
+                prompt_template_name=note.prompt_template_name,
+                prompt_template_sha=note.prompt_template_sha,
+                critic_attempts=note.critic_attempts,
+            )
+            .on_conflict_do_nothing(index_elements=[Note.filing_accession])
+            .returning(Note.id)
+        )
+        result = await self._session.execute(stmt)
+        inserted_id = result.scalar_one_or_none()
+        if inserted_id is not None:
+            return int(inserted_id)
+        existing = await self._session.execute(
+            select(Note.id).where(Note.filing_accession == note.filing_accession)
+        )
+        return int(existing.scalar_one())
+
+    async def get_latest_note(self, *, ticker: str) -> NoteRead | None:
+        """Return the most-recently-created note for ``ticker``, or ``None``.
+
+        Used by the peer-critic node to surface the prior accepted note for
+        cross-quarter comparison.
+        """
+        stmt = (
+            select(Note)
+            .where(Note.ticker == ticker)
+            .order_by(Note.created_at.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return NoteRead(
+            id=row.id,
+            filing_accession=row.filing_accession,
+            ticker=row.ticker,
+            markdown_body=row.markdown_body,
+            prompt_template_name=row.prompt_template_name,
+            prompt_template_sha=row.prompt_template_sha,
+            critic_attempts=row.critic_attempts,
+            created_at=row.created_at,
+        )
