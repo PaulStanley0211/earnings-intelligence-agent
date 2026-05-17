@@ -1,0 +1,100 @@
+{
+  "base_note_stem": "synthetic_a",
+  "perturbation": "fabricated_peer",
+  "note_markdown": "# Alphabet Q3 2026 Earnings Note\n\nAlphabet reported consolidated revenue of $102.7 billion [F2] for Q3 2026, beating consensus by $1.7 billion [C1]. EPS (diluted) came in at $2.15 [F1].\n\nManagement strengthened its Search AI commentary. \"AI-driven features in Search, including AI Overviews and AI Mode, continue to deliver strong engagement\" [L1]\n\nBrian Nowak from Morgan Stanley pressed on the capex step-up. \"The increase reflects stronger than expected Cloud demand pull-through, expanded build for our internal Gemini training fleet, and selective infrastructure pre-positioning. Cloud RPO grew 38 percent year over year.\" [Q1]\n\nManagement formalised the capex commitment for fiscal 2026. \"we now expect full-year 2026 capex to be approximately 88 billion dollars\" [K1]\n\nMETA noted similar strength last quarter. \"META reported strong demand across all regions.\" [P99]\n",
+  "state_snapshot": {
+    "trace_id": "synthetic-a-base-001",
+    "started_at": "2026-05-17T12:00:00Z",
+    "cost_usd": 0.0,
+    "filing_event": {
+      "accession_number": "upload-googl-q3-2026-cccccc",
+      "cik": "0000000001",
+      "ticker": "GOOGL",
+      "form": "10-Q",
+      "filed_at": "2026-05-17T00:00:00Z",
+      "source_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=GOOGL",
+      "source": "upload"
+    },
+    "plan": [],
+    "financials": {
+      "by_concept": {
+        "EarningsPerShareDiluted": [
+          {
+            "value": 2.15,
+            "unit": "USD/share",
+            "period_end": "2026-09-30",
+            "period_start": "2026-07-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ],
+        "Revenues": [
+          {
+            "value": 102700000000,
+            "unit": "USD",
+            "period_end": "2026-09-30",
+            "period_start": "2026-07-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ]
+      }
+    },
+    "comparisons": {
+      "metrics": [
+        {
+          "metric": "revenue",
+          "reported_value": 102700000000,
+          "reported_unit": "USD",
+          "consensus_value": 101000000000,
+          "consensus_source": "finnhub",
+          "surprise_abs": 1700000000,
+          "surprise_pct": 1.68,
+          "direction": "beat"
+        }
+      ]
+    },
+    "language_diffs": [
+      {
+        "section": "mda",
+        "diffs": [
+          {
+            "change_type": "modified",
+            "current_text": "AI-driven features in Search, including AI Overviews and AI Mode, continue to deliver strong engagement",
+            "prior_text": "AI-driven features in Search continue to show solid engagement",
+            "severity": "minor"
+          }
+        ]
+      }
+    ],
+    "qa_pairs": [
+      {
+        "ordinal": 1,
+        "analyst_name": "Brian Nowak",
+        "question_text": "Can you walk through what is driving the capex increase to 88 billion, and how confident you are in the demand signals?",
+        "answer_text": "The increase reflects stronger than expected Cloud demand pull-through, expanded build for our internal Gemini training fleet, and selective infrastructure pre-positioning. Cloud RPO grew 38 percent year over year.",
+        "answer_class": "direct",
+        "sha256_text": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }
+    ],
+    "commitments": [
+      {
+        "commitment_text": "Full-year 2026 capex guidance raised to approximately $88 billion",
+        "target_period": "FY2026",
+        "source_quote": "we now expect full-year 2026 capex to be approximately 88 billion dollars"
+      }
+    ],
+    "commitment_updates": [],
+    "peer_context": [],
+    "draft_note": null,
+    "critic_findings": [],
+    "critic_verdict": null,
+    "critic_attempts": 0,
+    "final_note": null,
+    "persisted_note_id": null
+  },
+  "expected_finding": {
+    "layer": "quote",
+    "surface": "[P99]"
+  }
+}

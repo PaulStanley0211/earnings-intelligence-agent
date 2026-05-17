@@ -1,0 +1,100 @@
+{
+  "base_note_stem": "nimbus_q2",
+  "perturbation": "fabricated_peer",
+  "note_markdown": "# Nimbus Systems Q2 FY2026 Earnings Note\n\nNimbus delivered a strong second quarter. Total revenue reached $612 million [F2], beating consensus and generating a beat of $12 million [C1]. EPS (diluted) was $1.28 [F1].\n\nManagement sharpened its demand commentary in the MD&A. \"We continue to see strong demand from enterprise customers consolidating onto Stratus\" [L1]\n\nAaron Mitchell asked about the Cirrus integration timeline. \"We are very enthusiastic about the Cirrus combination. We expect native Cirrus query capabilities by the end of fiscal Q4 2026.\" [Q1]\n\nLooking ahead, management committed to delivering Cirrus capabilities on schedule. \"we expect native Cirrus query capabilities by the end of fiscal Q4 2026\" [K1]\n\nMETA noted similar strength last quarter. \"META reported strong demand across all regions.\" [P99]\n",
+  "state_snapshot": {
+    "trace_id": "nimbus-q2-base-001",
+    "started_at": "2026-05-17T12:00:00Z",
+    "cost_usd": 0.0,
+    "filing_event": {
+      "accession_number": "upload-nimbus-q2-2026-aaaaaa",
+      "cik": "0000000001",
+      "ticker": "NIMBUS",
+      "form": "10-Q",
+      "filed_at": "2026-05-17T00:00:00Z",
+      "source_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NIMBUS",
+      "source": "upload"
+    },
+    "plan": [],
+    "financials": {
+      "by_concept": {
+        "EarningsPerShareDiluted": [
+          {
+            "value": 1.28,
+            "unit": "USD/share",
+            "period_end": "2026-03-31",
+            "period_start": "2026-01-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ],
+        "Revenues": [
+          {
+            "value": 612000000,
+            "unit": "USD",
+            "period_end": "2026-03-31",
+            "period_start": "2026-01-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ]
+      }
+    },
+    "comparisons": {
+      "metrics": [
+        {
+          "metric": "revenue",
+          "reported_value": 612000000,
+          "reported_unit": "USD",
+          "consensus_value": 600000000,
+          "consensus_source": "finnhub",
+          "surprise_abs": 12000000,
+          "surprise_pct": 2.0,
+          "direction": "beat"
+        }
+      ]
+    },
+    "language_diffs": [
+      {
+        "section": "mda",
+        "diffs": [
+          {
+            "change_type": "modified",
+            "current_text": "We continue to see strong demand from enterprise customers consolidating onto Stratus",
+            "prior_text": "We see demand from enterprise customers adopting Stratus",
+            "severity": "minor"
+          }
+        ]
+      }
+    ],
+    "qa_pairs": [
+      {
+        "ordinal": 1,
+        "analyst_name": "Aaron Mitchell",
+        "question_text": "Can you give us more color on the Cirrus Analytics integration plan?",
+        "answer_text": "We are very enthusiastic about the Cirrus combination. We expect native Cirrus query capabilities by the end of fiscal Q4 2026.",
+        "answer_class": "direct",
+        "sha256_text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "commitments": [
+      {
+        "commitment_text": "Deliver native Cirrus capabilities inside Stratus console by end of Q4 2026",
+        "target_period": "Q4 2026",
+        "source_quote": "we expect native Cirrus query capabilities by the end of fiscal Q4 2026"
+      }
+    ],
+    "commitment_updates": [],
+    "peer_context": [],
+    "draft_note": null,
+    "critic_findings": [],
+    "critic_verdict": null,
+    "critic_attempts": 0,
+    "final_note": null,
+    "persisted_note_id": null
+  },
+  "expected_finding": {
+    "layer": "quote",
+    "surface": "[P99]"
+  }
+}
