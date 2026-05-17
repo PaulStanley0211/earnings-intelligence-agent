@@ -1,0 +1,100 @@
+{
+  "base_note_stem": "msft_8k",
+  "perturbation": "citation_swap",
+  "note_markdown": "# NVIDIA Q2 FY2026 Earnings Note\n\nNVIDIA reported Q2 revenue of $44.2 billion [F1], exceeding consensus by $700 million [C1]. EPS (diluted) was $1.89 [F2].\n\nThe Data Center segment narrative updated significantly. \"Data Center revenue reached $37.1 billion, driven by Blackwell architecture demand\" [L1]\n\nStacy Rasgon from Bernstein pressed on Blackwell supply timing. \"Blackwell supply is ramping rapidly. We expect supply to be in balance with demand by the end of calendar 2026. Customer lead times have shortened from over 52 weeks to under 26 weeks.\" [Q1]\n\nManagement committed to resolving the supply-demand imbalance. \"we expect supply to be in balance with demand by the end of calendar 2026\" [K1]\n",
+  "state_snapshot": {
+    "trace_id": "msft-8k-base-001",
+    "started_at": "2026-05-17T12:00:00Z",
+    "cost_usd": 0.0,
+    "filing_event": {
+      "accession_number": "upload-nvda-q2-2026-eeeeee",
+      "cik": "0000000001",
+      "ticker": "NVDA",
+      "form": "8-K",
+      "filed_at": "2026-05-17T00:00:00Z",
+      "source_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NVDA",
+      "source": "upload"
+    },
+    "plan": [],
+    "financials": {
+      "by_concept": {
+        "EarningsPerShareDiluted": [
+          {
+            "value": 1.89,
+            "unit": "USD/share",
+            "period_end": "2026-07-28",
+            "period_start": "2026-04-28",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ],
+        "Revenues": [
+          {
+            "value": 44200000000,
+            "unit": "USD",
+            "period_end": "2026-07-28",
+            "period_start": "2026-04-28",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ]
+      }
+    },
+    "comparisons": {
+      "metrics": [
+        {
+          "metric": "revenue",
+          "reported_value": 44200000000,
+          "reported_unit": "USD",
+          "consensus_value": 43500000000,
+          "consensus_source": "finnhub",
+          "surprise_abs": 700000000,
+          "surprise_pct": 1.61,
+          "direction": "beat"
+        }
+      ]
+    },
+    "language_diffs": [
+      {
+        "section": "risk_factors",
+        "diffs": [
+          {
+            "change_type": "modified",
+            "current_text": "Data Center revenue reached $37.1 billion, driven by Blackwell architecture demand",
+            "prior_text": "Data Center revenue was up on strong GPU demand",
+            "severity": "minor"
+          }
+        ]
+      }
+    ],
+    "qa_pairs": [
+      {
+        "ordinal": 1,
+        "analyst_name": "Stacy Rasgon",
+        "question_text": "Can you give us visibility into Blackwell supply-demand balance and when you expect supply to catch up to demand?",
+        "answer_text": "Blackwell supply is ramping rapidly. We expect supply to be in balance with demand by the end of calendar 2026. Customer lead times have shortened from over 52 weeks to under 26 weeks.",
+        "answer_class": "direct",
+        "sha256_text": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    ],
+    "commitments": [
+      {
+        "commitment_text": "Blackwell supply-demand balance expected by end of calendar 2026",
+        "target_period": "CY2026",
+        "source_quote": "we expect supply to be in balance with demand by the end of calendar 2026"
+      }
+    ],
+    "commitment_updates": [],
+    "peer_context": [],
+    "draft_note": null,
+    "critic_findings": [],
+    "critic_verdict": null,
+    "critic_attempts": 0,
+    "final_note": null,
+    "persisted_note_id": null
+  },
+  "expected_finding": {
+    "layer": "numbers",
+    "surface": "[F1] or [F2]"
+  }
+}

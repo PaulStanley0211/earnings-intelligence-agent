@@ -133,3 +133,46 @@ def test_phase3_migration_creates_pgvector_and_tables(clean_database: None) -> N
         )
         assert [row[0] for row in tables.all()] == ["filing_sections", "language_diffs"]
     engine.dispose()
+
+
+def test_migration_0008_creates_notes_table(clean_database: None) -> None:
+    """0008_phase5a_notes adds the notes table with the expected columns and index."""
+    command.upgrade(_alembic_config(), "head")
+
+    engine = create_engine(_sync_url(), future=True)
+    inspector = inspect(engine)
+
+    cols = [c["name"] for c in inspector.get_columns("notes")]
+    idx = [i["name"] for i in inspector.get_indexes("notes")]
+
+    assert "id" in cols
+    assert "filing_accession" in cols
+    assert "markdown_body" in cols
+    assert "prompt_template_sha" in cols
+    assert "ix_notes_ticker_created" in idx
+
+    engine.dispose()
+
+
+def test_migration_0009_creates_peers_table(clean_database: None) -> None:
+    """0009_phase5b_peers adds the peers table with expected columns and constraints."""
+    command.upgrade(_alembic_config(), "head")
+
+    engine = create_engine(_sync_url(), future=True)
+    inspector = inspect(engine)
+
+    cols = [c["name"] for c in inspector.get_columns("peers")]
+    assert "ticker" in cols
+    assert "peer_ticker" in cols
+
+    with engine.connect() as conn:
+        constraints = conn.execute(
+            text(
+                "SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'peers'::regclass AND contype = 'c'"
+            )
+        ).fetchall()
+        constraint_names = {row[0] for row in constraints}
+        assert "peers_no_self_reference" in constraint_names
+
+    engine.dispose()

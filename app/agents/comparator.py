@@ -26,7 +26,7 @@ from app.memory.schemas import (
     NewComparison,
     NewConsensusEstimate,
 )
-from app.models.state import AgentState, StateUpdate
+from app.models.state import AgentState, FilingForm, StateUpdate
 from app.observability.logging import current_trace_id, get_logger
 
 _logger = get_logger()
@@ -79,8 +79,15 @@ async def compare_against_consensus(
     upstream financial-extractor node. When the extractor produced nothing
     usable (no quarter-aligned facts), it short-circuits and returns an empty
     comparisons summary so the synthesiser can degrade gracefully.
+
+    Self-skips on ``TRANSCRIPT`` filings: transcripts have no reported
+    numbers to compare against consensus, so the node yields an empty
+    update and lets the parallel ``transcript_analyzer`` carry the payload
+    for that branch of the graph.
     """
     filing = state.filing_event
+    if filing.form == FilingForm.TRANSCRIPT:
+        return StateUpdate(owner=OWNER, changes={})
     financials = state.financials or {}
     by_concept = financials.get("by_concept") or {}
     reported = _select_reported_values(by_concept)

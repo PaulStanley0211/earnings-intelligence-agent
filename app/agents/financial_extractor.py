@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from typing import Any, Protocol
 
 from app.memory.repository import Repository
-from app.models.state import AgentState, StateUpdate
+from app.models.state import AgentState, FilingForm, StateUpdate
 from app.observability.logging import current_trace_id, get_logger
 from app.tools.companyfacts import DEFAULT_CONCEPT_ALLOWLIST, parse_company_facts
 from app.tools.edgar import CompanyFactsResponse
@@ -49,8 +49,15 @@ async def extract_financials(
     ``concepts`` defaults to :data:`DEFAULT_CONCEPT_ALLOWLIST`; pass an empty
     iterable to disable the filter. Returns a :class:`StateUpdate` that the
     LangGraph reducer applies to ``state.financials``.
+
+    Self-skips on ``TRANSCRIPT`` filings: user-uploaded earnings-call
+    transcripts have no XBRL companyfacts to pull, so the node yields an
+    empty update and lets the parallel ``transcript_analyzer`` carry the
+    payload for that branch of the graph.
     """
     filing = state.filing_event
+    if filing.form == FilingForm.TRANSCRIPT:
+        return StateUpdate(owner=OWNER, changes={})
     allowlist = (
         DEFAULT_CONCEPT_ALLOWLIST
         if concepts is None

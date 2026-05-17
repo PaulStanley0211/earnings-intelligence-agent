@@ -1,0 +1,109 @@
+{
+  "base_note_stem": "nimbus_q3",
+  "perturbation": "contradicted_direction",
+  "note_markdown": "# Nimbus Systems Q3 FY2026 Earnings Note\n\nNimbus reported Q3 revenue of $668 million [F2], behind consensus by $13 million [C1]. EPS (diluted) came in at $1.41 [F1].\n\nManagement updated its GAAP profitability commentary. \"We now expect GAAP operating profitability in fiscal 2027\" [L1]\n\nThe Stratus Copilot timeline slipped. Theo Bennett pressed on the original commitment: \"We are not going to hit the end of fiscal Q4 2026 GA target for Stratus Copilot. We now expect Stratus Copilot to reach general availability in fiscal Q2 2027.\" [Q1]\n\nManagement set a revised commitment for the AI product. \"we now expect Stratus Copilot to reach general availability in fiscal Q2 2027\" [K1]\n\nPeer signals reinforce the consolidation theme. \"Similar cloud observability tailwinds noted in DATADOG Q3 language: customers consolidating onto unified platforms\" [P0]\n",
+  "state_snapshot": {
+    "trace_id": "nimbus-q3-base-001",
+    "started_at": "2026-05-17T12:00:00Z",
+    "cost_usd": 0.0,
+    "filing_event": {
+      "accession_number": "upload-nimbus-q3-2026-bbbbbb",
+      "cik": "0000000001",
+      "ticker": "NIMBUS",
+      "form": "10-Q",
+      "filed_at": "2026-05-17T00:00:00Z",
+      "source_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=NIMBUS",
+      "source": "upload"
+    },
+    "plan": [],
+    "financials": {
+      "by_concept": {
+        "EarningsPerShareDiluted": [
+          {
+            "value": 1.41,
+            "unit": "USD/share",
+            "period_end": "2026-06-30",
+            "period_start": "2026-04-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ],
+        "Revenues": [
+          {
+            "value": 668000000,
+            "unit": "USD",
+            "period_end": "2026-06-30",
+            "period_start": "2026-04-01",
+            "fiscal_year": 2026,
+            "fiscal_period": "Q2"
+          }
+        ]
+      }
+    },
+    "comparisons": {
+      "metrics": [
+        {
+          "metric": "revenue",
+          "reported_value": 668000000,
+          "reported_unit": "USD",
+          "consensus_value": 655000000,
+          "consensus_source": "finnhub",
+          "surprise_abs": 13000000,
+          "surprise_pct": 1.98,
+          "direction": "beat"
+        }
+      ]
+    },
+    "language_diffs": [
+      {
+        "section": "mda",
+        "diffs": [
+          {
+            "change_type": "modified",
+            "current_text": "We now expect GAAP operating profitability in fiscal 2027",
+            "prior_text": "We expect GAAP operating profitability in fiscal 2027",
+            "severity": "minor"
+          }
+        ]
+      }
+    ],
+    "qa_pairs": [
+      {
+        "ordinal": 1,
+        "analyst_name": "Theo Bennett",
+        "question_text": "Are you still on track for the Stratus Copilot GA date at end of fiscal Q4 2026?",
+        "answer_text": "We are not going to hit the end of fiscal Q4 2026 GA target for Stratus Copilot. We now expect Stratus Copilot to reach general availability in fiscal Q2 2027.",
+        "answer_class": "direct",
+        "sha256_text": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "commitments": [
+      {
+        "commitment_text": "Stratus Copilot GA moved to fiscal Q2 2027",
+        "target_period": "Q2 2027",
+        "source_quote": "we now expect Stratus Copilot to reach general availability in fiscal Q2 2027"
+      }
+    ],
+    "commitment_updates": [],
+    "peer_context": [
+      {
+        "peer_ticker": "DDOG",
+        "kind": "language_diff",
+        "text": "Similar cloud observability tailwinds noted in DATADOG Q3 language: customers consolidating onto unified platforms",
+        "source_filing_accession": "0000123456-26-000099",
+        "severity": "minor"
+      }
+    ],
+    "draft_note": null,
+    "critic_findings": [],
+    "critic_verdict": null,
+    "critic_attempts": 0,
+    "final_note": null,
+    "persisted_note_id": null
+  },
+  "expected_finding": {
+    "layer": "semantic",
+    "surface": "direction"
+  },
+  "note": "deterministic critic may not fire on direction-only contradictions; this perturbation targets the LLM critic in Phase 5c."
+}

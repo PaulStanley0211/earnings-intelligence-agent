@@ -1,0 +1,91 @@
+{
+  "trace_id": "synthetic-b-base-001",
+  "started_at": "2026-05-17T12:00:00Z",
+  "cost_usd": 0.0,
+  "filing_event": {
+    "accession_number": "upload-msft-q1-2026-dddddd",
+    "cik": "0000000001",
+    "ticker": "MSFT",
+    "form": "10-Q",
+    "filed_at": "2026-05-17T00:00:00Z",
+    "source_url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=MSFT",
+    "source": "upload"
+  },
+  "plan": [],
+  "financials": {
+    "by_concept": {
+      "EarningsPerShareDiluted": [
+        {
+          "value": 3.42,
+          "unit": "USD/share",
+          "period_end": "2026-09-30",
+          "period_start": "2026-07-01",
+          "fiscal_year": 2026,
+          "fiscal_period": "Q2"
+        }
+      ],
+      "Revenues": [
+        {
+          "value": 70100000000,
+          "unit": "USD",
+          "period_end": "2026-09-30",
+          "period_start": "2026-07-01",
+          "fiscal_year": 2026,
+          "fiscal_period": "Q2"
+        }
+      ]
+    }
+  },
+  "comparisons": {
+    "metrics": [
+      {
+        "metric": "revenue",
+        "reported_value": 70100000000,
+        "reported_unit": "USD",
+        "consensus_value": 68500000000,
+        "consensus_source": "finnhub",
+        "surprise_abs": 1600000000,
+        "surprise_pct": 2.34,
+        "direction": "beat"
+      }
+    ]
+  },
+  "language_diffs": [
+    {
+      "section": "mda",
+      "diffs": [
+        {
+          "change_type": "modified",
+          "current_text": "Microsoft Cloud revenue reached $45.3 billion, up 22 percent year over year",
+          "prior_text": "Microsoft Cloud revenue was up 21 percent year over year",
+          "severity": "minor"
+        }
+      ]
+    }
+  ],
+  "qa_pairs": [
+    {
+      "ordinal": 1,
+      "analyst_name": "Keith Weiss",
+      "question_text": "Can you give us an update on Azure growth and the AI services contribution?",
+      "answer_text": "Azure and other cloud services grew 33 percent in the quarter. AI services contributed 13 points of that growth, up from 9 points in the prior quarter.",
+      "answer_class": "direct",
+      "sha256_text": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "commitments": [
+    {
+      "commitment_text": "Azure growth expected to accelerate H2 FY2026 on AI capacity",
+      "target_period": "H2 FY2026",
+      "source_quote": "we expect Azure growth to accelerate in the second half of fiscal 2026 as our AI capacity investments come online"
+    }
+  ],
+  "commitment_updates": [],
+  "peer_context": [],
+  "draft_note": null,
+  "critic_findings": [],
+  "critic_verdict": null,
+  "critic_attempts": 0,
+  "final_note": null,
+  "persisted_note_id": null
+}

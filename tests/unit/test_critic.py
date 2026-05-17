@@ -10,10 +10,13 @@ import pytest
 from app.agents.critic import _MAX_CRITIC_ATTEMPTS, OWNER, critique_draft
 from app.models.state import (
     AgentState,
+    AnswerClass,
+    CommitmentExtracted,
     CriticFinding,
     CriticVerdict,
     FilingEvent,
     FilingForm,
+    QAPairPayload,
 )
 
 
@@ -287,3 +290,231 @@ def test_critic_rejects_l_citation_with_no_matching_index() -> None:
     update = critique_draft(state)
     findings = update.changes["critic_findings"]
     assert any(f.severity == "error" and "L7" in f.message for f in findings)
+
+
+def _transcript_state(
+    *,
+    draft: str,
+    qa_pairs: list[QAPairPayload] | None = None,
+    commitments: list[CommitmentExtracted] | None = None,
+) -> AgentState:
+    return AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000950170-26-000050",
+            cik="0000789019",
+            ticker="MSFT",
+            form=FilingForm.TRANSCRIPT,
+            filed_at=datetime.now(UTC),
+            source_url="https://ir.example.com/transcript.pdf",
+        ),
+        qa_pairs=qa_pairs or [],
+        commitments=commitments or [],
+        draft_note=draft,
+    )
+
+
+def test_critic_accepts_qa_citation_within_tolerance() -> None:
+    """A quoted Q&A phrase that resolves into the indexed answer is accepted."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name="Brent Thill",
+        question_text="How should we think about Azure margins next quarter?",
+        answer_text="We expect margins to remain stable around 47 percent.",
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="a" * 64,
+    )
+    draft = (
+        "## Q&A signals\n"
+        "- We expect margins to remain stable around 47 percent [Q1].\n"
+    )
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert not any(f.severity == "error" and "Q1" in f.message for f in findings)
+
+
+def test_critic_rejects_qa_citation_with_low_similarity() -> None:
+    """A quoted phrase that does not appear in the cited Q&A is rejected."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name="Brent Thill",
+        question_text="How are Azure margins trending?",
+        answer_text="Hard to forecast precisely; we will update next quarter.",
+        answer_class=AnswerClass.DEFLECTED,
+        sha256_text="a" * 64,
+    )
+    draft = (
+        "## Q&A signals\n"
+        "- We are pivoting away from cloud entirely and refocusing on PCs [Q1].\n"
+    )
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "Q1" in f.message for f in findings)
+
+
+def test_critic_accepts_commitment_citation() -> None:
+    """A draft phrase matching a commitment's source_quote is accepted."""
+    commitment = CommitmentExtracted(
+        commitment_text="Azure margin expansion of 100 basis points next quarter.",
+        target_period="Q3 2026",
+        source_quote="we expect Azure margin expansion of 100 basis points next quarter",
+    )
+    draft = (
+        "## Commitments\n"
+        "- we expect Azure margin expansion of 100 basis points next quarter [K1].\n"
+    )
+    state = _transcript_state(draft=draft, commitments=[commitment])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert not any(f.severity == "error" and "K1" in f.message for f in findings)
+
+
+def test_critic_rejects_unresolved_qa_citation() -> None:
+    """A [Q#] that points past the end of the qa_pairs list is rejected."""
+    qa = QAPairPayload(
+        ordinal=1,
+        analyst_name=None,
+        question_text="q",
+        answer_text="a",
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="a" * 64,
+    )
+    draft = "## Q&A signals\n- Mystery phrase [Q99].\n"
+    state = _transcript_state(draft=draft, qa_pairs=[qa])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "Q99" in f.message for f in findings)
+
+
+def test_critic_rejects_unresolved_commitment_citation() -> None:
+    """A [K#] without a backing commitment is rejected."""
+    draft = "## Commitments\n- A made-up promise [K3].\n"
+    state = _transcript_state(draft=draft)
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    assert any(f.severity == "error" and "K3" in f.message for f in findings)
+
+
+def test_critic_resolves_unknown_p_citation() -> None:
+    """When the synthesizer cites [P0] but peer_context is empty, the critic
+    must flag the citation as unknown."""
+    from app.models.state import FilingEventSource
+
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000123-25-000001",
+            cik="0000123",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2025, 1, 1, tzinfo=UTC),
+            source_url="https://www.sec.gov/...",
+            source=FilingEventSource.UPLOAD,
+        ),
+        draft_note='Peer says "growth strong" [P0].',
+        peer_context=[],
+    )
+    update = critique_draft(state)
+    assert any(
+        f.severity == "error" and "P0" in f.message
+        for f in update.changes["critic_findings"]
+    )
+
+
+def test_critic_resolves_known_p_citation() -> None:
+    """A [P#] citation that resolves against peer_context with matching text is accepted."""
+    from app.models.state import FilingEventSource, PeerContextEntry
+
+    state = AgentState(
+        trace_id="t",
+        started_at=datetime.now(UTC),
+        filing_event=FilingEvent(
+            accession_number="0000123-25-000001",
+            cik="0000123",
+            ticker="MSFT",
+            form=FilingForm.FORM_10Q,
+            filed_at=datetime(2025, 1, 1, tzinfo=UTC),
+            source_url="https://www.sec.gov/...",
+            source=FilingEventSource.UPLOAD,
+        ),
+        # Draft cites the peer text verbatim so the 90% similarity check passes.
+        draft_note="Cloud pricing pressure intensified during the quarter [P0].",
+        peer_context=[
+            PeerContextEntry(
+                peer_ticker="GOOGL",
+                kind="language_diff",
+                text="Cloud pricing pressure intensified during the quarter.",
+                source_filing_accession="x-1",
+                severity="major",
+            )
+        ],
+    )
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    # No error finding referencing P0 should remain.
+    assert all(f.severity != "error" or "P0" not in f.message for f in findings)
+
+
+def test_language_match_uses_quoted_substring_when_line_has_quotes() -> None:
+    """Editorial framing around a quoted phrase must not fail the match."""
+    from app.agents.critic import _language_match
+
+    quoted_line = 'Sarah Lee asked "what is the cloud margin outlook for Q3"'
+    indexed = "What is the cloud margin outlook for Q3? Is it on the high end?"
+
+    assert _language_match(quoted_line, indexed) is True
+
+
+def test_language_match_falls_back_to_full_line_without_quotes() -> None:
+    from app.agents.critic import _language_match
+
+    line = "cloud margin outlook for Q3"
+    indexed = "What is the cloud margin outlook for Q3? Is it on the high end?"
+
+    assert _language_match(line, indexed) is True
+
+
+def test_language_match_rejects_wrong_quoted_substring() -> None:
+    from app.agents.critic import _language_match
+
+    quoted_line = 'Analyst said "earnings will collapse to zero"'
+    indexed = "We anticipate solid margin expansion."
+
+    assert _language_match(quoted_line, indexed) is False
+
+
+def test_numbers_in_language_cited_lines_are_not_flagged_as_uncited() -> None:
+    """Numbers inside a [K#]-cited quote must not be flagged as uncited figures.
+
+    The synthesizer quotes commitment source text verbatim, e.g.
+    '"revenue guidance of 2.55 to 2.60 billion dollars" [K2]'.
+    Those numbers are numeric evidence, not independent financial claims;
+    ``_language_cited_line_spans`` marks the whole line as covered so
+    ``_find_uncited`` does not raise an error on them.
+    """
+    from app.models.state import CommitmentExtracted
+
+    commitment = CommitmentExtracted(
+        commitment_text="Revenue guidance of 2.55 to 2.60 billion.",
+        target_period="FY2026",
+        source_quote=(
+            "reiterating our previously communicated full-year fiscal 2026 "
+            "revenue guidance of 2.55 to 2.60 billion dollars"
+        ),
+    )
+    draft = (
+        "## Commitments\n"
+        '- Management said "reiterating our previously communicated full-year '
+        "fiscal 2026 revenue guidance of 2.55 to 2.60 billion dollars\" [K1].\n"
+    )
+    state = _transcript_state(draft=draft, commitments=[commitment])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    # The 2.55 / 2.60 billion values must not be flagged as uncited numbers.
+    assert not any("2.60" in f.message or "2.55" in f.message for f in findings), (
+        f"Numbers inside a [K#]-cited line must not be flagged; got: {findings}"
+    )

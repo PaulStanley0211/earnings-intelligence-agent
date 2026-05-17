@@ -1,0 +1,8 @@
+{
+  "cost_usd": 0.107655,
+  "input_tokens": 4607,
+  "model": "claude-opus-4-7",
+  "output_tokens": 514,
+  "prompt_version": "synthesizer/full_v1@v1#60421649",
+  "text": "## Headline\n\nNimbus management used its earnings call to reiterate fiscal 2026 revenue guidance, raise the non-GAAP operating margin outlook, and detail integration plans for the pending Cirrus Analytics acquisition.\n\n## Q&A signals\n\n- On Cirrus integration timing, Daniel Cho said \"we expect native Cirrus query capabilities to be generally available inside the Stratus console by the end of fiscal Q4 2026\" [Q1].\n- On the margin guide, Helena Vargas attributed \"about 60 basis points to the hiring slowdown\" and \"about 40 basis points to underlying gross-margin improvement in Stratus\" [Q2].\n- On competitive positioning, Daniel Cho said \"our win rate against the hyperscaler-native offerings remained above 75 percent in Q2\" [Q7].\n\n## Commitments\n\n- Management expects to close the previously announced Cirrus Analytics acquisition by the end of fiscal Q3 2026, which it said \"will materially expand our footprint in real-time log analytics\" [K1].\n- Full-year fiscal 2026 revenue guidance was reiterated, with management stating it is \"reiterating our previously communicated full-year fiscal 2026 revenue guidance of 2.55 to 2.60 billion dollars\" [K2].\n- Management raised the non-GAAP operating margin outlook, saying it \"now expect[s] full-year non-GAAP operating margin to land at approximately 19 percent, up from our prior guidance of 18 percent\" [K3]."
+}

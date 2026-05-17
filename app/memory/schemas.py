@@ -19,9 +19,17 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from app.models.state import FilingForm
+from app.models.state import (
+    AnswerClass as AnswerClass,
+)
+from app.models.state import (
+    CommitmentStatus as CommitmentStatus,
+)
+from app.models.state import (
+    FilingForm,
+)
 
 
 class FilingStatus(StrEnum):
@@ -352,3 +360,153 @@ class UploadedDocumentRecord(BaseModel):
     parsed_char_count: int
     page_count: int | None
     uploaded_at: datetime
+
+
+# ---- Phase 4B: transcript Q&A pairs and management commitments ----
+#
+# ``AnswerClass`` and ``CommitmentStatus`` are defined in
+# :mod:`app.models.state` so the in-graph ``AgentState`` payload models
+# can use them without a circular import. They are re-exported at the top
+# of this module for backwards compatibility with existing callers that
+# import them from here.
+
+
+class NewQAPair(BaseModel):
+    """Inputs to :meth:`Repository.add_qa_pairs`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ordinal: int
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: AnswerClass
+    sha256_text: str = Field(..., min_length=64, max_length=64)
+
+
+class QAPairRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.QAPair` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    ordinal: int
+    analyst_name: str | None
+    question_text: str
+    answer_text: str
+    answer_class: AnswerClass
+    sha256_text: str
+    created_at: datetime
+
+
+class NewCommitment(BaseModel):
+    """Inputs to :meth:`Repository.add_commitments`.
+
+    ``status`` is intentionally omitted - the DB column defaults to ``open``
+    so freshly-extracted commitments enter the open queue automatically.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    commitment_text: str
+    target_period: str | None
+    source_quote: str
+
+
+class CommitmentRecord(BaseModel):
+    """Detached view of a :class:`~app.memory.models.Commitment` row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filing_accession: str
+    ticker: str
+    commitment_text: str
+    target_period: str | None
+    source_quote: str
+    status: CommitmentStatus
+    resolved_filing_accession: str | None
+    resolved_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# ---- Phase 5A: persisted synthesized notes ----
+
+
+class NoteCreate(BaseModel):
+    """Pre-persistence note payload."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    ticker: str
+    markdown_body: str
+    prompt_template_name: str
+    prompt_template_sha: str = Field(..., min_length=64, max_length=64)
+    critic_attempts: int = Field(..., ge=1)
+
+
+class NoteRead(BaseModel):
+    """Read-side note projection."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    filing_accession: str
+    ticker: str
+    markdown_body: str
+    prompt_template_name: str
+    prompt_template_sha: str
+    critic_attempts: int
+    created_at: datetime
+
+
+# ---- Phase 5B: peer context DTOs ----
+
+
+class PeerCreate(BaseModel):
+    """Pre-persistence peer mapping."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    peer_ticker: str
+    source: str = "curated"
+
+    @field_validator("peer_ticker")
+    @classmethod
+    def _no_self_reference(cls, v: str, info: ValidationInfo) -> str:
+        ticker = info.data.get("ticker")
+        if ticker is not None and v == ticker:
+            raise ValueError("peer_ticker must differ from ticker")
+        return v
+
+
+class PeerLanguageDiffSignal(BaseModel):
+    """One major language diff signal from a peer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    severity: str
+    source_filing_accession: str
+
+
+class PeerCommitmentSignal(BaseModel):
+    """One open commitment signal from a peer."""
+
+    model_config = ConfigDict(frozen=True)
+
+    text: str
+    source_filing_accession: str
+
+
+class PeerSignals(BaseModel):
+    """Bundle of peer signals returned by the repository."""
+
+    model_config = ConfigDict(frozen=True)
+
+    language_diffs: list[PeerLanguageDiffSignal] = Field(default_factory=list)
+    commitments: list[PeerCommitmentSignal] = Field(default_factory=list)

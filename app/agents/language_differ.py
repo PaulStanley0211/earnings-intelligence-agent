@@ -28,7 +28,7 @@ from app.memory.schemas import (
     SectionKind,
     Severity,
 )
-from app.models.state import AgentState, StateUpdate
+from app.models.state import AgentState, FilingForm, StateUpdate
 from app.observability.logging import current_trace_id, get_logger
 from app.tools.sections import ParsedSection, parse_sections
 
@@ -174,8 +174,15 @@ async def diff_language(
     Always persists the current filing's parsed paragraphs so the next
     quarter has a baseline. Returns a :class:`StateUpdate` whose
     ``language_diffs`` payload is a list of per-section summaries.
+
+    Self-skips on ``TRANSCRIPT`` filings: user-uploaded earnings-call
+    transcripts have no MD&A or Risk Factors sections, so the node yields
+    an empty update and lets the parallel ``transcript_analyzer`` carry
+    the payload for that branch of the graph.
     """
     filing = state.filing_event
+    if filing.form == FilingForm.TRANSCRIPT:
+        return StateUpdate(owner=OWNER, changes={})
     filing_row = await repository.get_filing(filing.accession_number)
     primary_document = getattr(filing_row, "primary_document", None)
     if not primary_document:

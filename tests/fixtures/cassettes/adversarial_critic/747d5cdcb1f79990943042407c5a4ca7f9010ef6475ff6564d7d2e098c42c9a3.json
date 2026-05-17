@@ -1,0 +1,8 @@
+{
+  "cost_usd": 0.041205,
+  "input_tokens": 1712,
+  "model": "claude-opus-4-7",
+  "output_tokens": 207,
+  "prompt_version": "critic/llm_v1@v1#caa9e21b",
+  "text": "{\"findings\":[{\"layer\":\"semantic\",\"severity\":\"warning\",\"claim\":\"Microsoft posted Q1 revenue of $70.1 billion [F2], missing consensus by $1.6 billion [C1].\",\"evidence\":\"The comparisons block [C1] only identifies 'revenue' as a comparison item; it does not contain a consensus figure or establish that revenue missed consensus by $1.6 billion.\",\"recommended_fix\":\"Remove the 'missing consensus by $1.6 billion' characterization unless a consensus figure is explicitly provided in the source, or restrict the statement to what the data supports.\"}]}"
+}

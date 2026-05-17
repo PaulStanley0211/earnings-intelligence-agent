@@ -12,8 +12,12 @@ the live :class:`~app.memory.repository.Repository`, so the cap survives
 restarts and is shared across processes.
 
 Phase 3 extends the prompt to include ``[L#]`` language-change citations
-from the differ. Future phases swap the version string and add A/B
-comparisons via ``evals/compare.py`` without changing this node.
+from the differ. Phase 5B adds peer-context support: when
+:attr:`AgentState.peer_context` is non-empty the node switches to the
+``full_with_peers_v1`` prompt which includes a ``<source name="peers">``
+block and the ``[P#]`` citation namespace. Future phases swap the version
+string and add A/B comparisons via ``evals/compare.py`` without changing
+this node.
 """
 
 from __future__ import annotations
@@ -21,12 +25,18 @@ from __future__ import annotations
 from typing import Any
 
 from app.agents.citations import (
+    CommitmentCitation,
     ComparisonCitation,
     FactCitation,
     LanguageCitation,
+    PeerCitation,
+    QACitation,
+    build_commitment_citations,
     build_comparison_citations,
     build_fact_citations,
     build_language_citations,
+    build_peer_citations,
+    build_qa_citations,
 )
 from app.llm.client import LLMClient, _SupportsDailySpend
 from app.llm.prompts import load_prompt
@@ -37,7 +47,10 @@ _logger = get_logger()
 
 OWNER = "synthesizer"
 
-_PROMPT_NAME = "synthesizer/numbers_with_language_v1"
+_PROMPT_NUMBERS_ONLY = "synthesizer/numbers_v1"
+_PROMPT_WITH_LANGUAGE = "synthesizer/numbers_with_language_v1"
+_PROMPT_FULL = "synthesizer/full_v1"
+_PROMPT_FULL_WITH_PEERS = "synthesizer/full_with_peers_v1"
 _MAX_TOKENS = 1024
 
 
@@ -55,28 +68,41 @@ async def synthesize_note(
     increments ``cost_usd`` so the per-event cost ledger stays accurate
     even across retries from the critic.
     """
-    template = load_prompt(_PROMPT_NAME)
+    prompt_name = _select_prompt(state)
+    template = load_prompt(prompt_name)
     fact_citations = build_fact_citations(state.financials)
     comparison_citations = build_comparison_citations(state.comparisons)
     language_citations = build_language_citations(state.language_diffs)
+    qa_citations = build_qa_citations(state.qa_pairs)
+    commitment_citations = build_commitment_citations(state.commitments)
+    peer_citations = build_peer_citations(state.peer_context)
     facts_block = _render_facts_block(fact_citations)
     comparisons_block = _render_comparisons_block(comparison_citations)
     language_block = _render_language_block(language_citations)
     critic_feedback = _render_critic_feedback(state)
 
-    user_content = template.render(
-        ticker=state.filing_event.ticker,
-        company_name=_company_name(state),
-        form=state.filing_event.form.value,
-        filed_at=state.filing_event.filed_at.isoformat(),
-        fiscal_year=str(_safe_get(state.comparisons, "fiscal_year") or ""),
-        fiscal_period=str(_safe_get(state.comparisons, "fiscal_period") or ""),
-        period_end=str(_safe_get(state.comparisons, "period_end") or ""),
-        facts_block=facts_block,
-        comparisons_block=comparisons_block,
-        language_block=language_block,
-        critic_feedback=critic_feedback,
-    )
+    substitutions: dict[str, str] = {
+        "ticker": state.filing_event.ticker,
+        "company_name": _company_name(state),
+        "form": state.filing_event.form.value,
+        "filed_at": state.filing_event.filed_at.isoformat(),
+        "fiscal_year": str(_safe_get(state.comparisons, "fiscal_year") or ""),
+        "fiscal_period": str(_safe_get(state.comparisons, "fiscal_period") or ""),
+        "period_end": str(_safe_get(state.comparisons, "period_end") or ""),
+        "facts_block": facts_block,
+        "comparisons_block": comparisons_block,
+        "language_block": language_block,
+        "critic_feedback": critic_feedback,
+    }
+    if prompt_name in (_PROMPT_FULL, _PROMPT_FULL_WITH_PEERS):
+        substitutions["qa_pairs_block"] = _render_qa_pairs_block(qa_citations)
+        substitutions["commitments_block"] = _render_commitments_block(
+            commitment_citations
+        )
+    if prompt_name == _PROMPT_FULL_WITH_PEERS:
+        substitutions["peers_block"] = _render_peers_block(peer_citations)
+
+    user_content = template.render(**substitutions)
 
     response = await llm.acomplete(
         prompt_version=f"{template.prompt_version}#{template.body_sha[:8]}",
@@ -90,9 +116,13 @@ async def synthesize_note(
     _logger.bind(
         accession=state.filing_event.accession_number,
         ticker=state.filing_event.ticker,
+        prompt_name=prompt_name,
         fact_citations=len(fact_citations),
         comparison_citations=len(comparison_citations),
         language_citations=len(language_citations),
+        qa_citations=len(qa_citations),
+        commitment_citations=len(commitment_citations),
+        peer_citations=len(peer_citations),
         cost_usd=response.cost_usd,
         prompt_version=response.prompt_version,
         trace_id=current_trace_id(),
@@ -104,6 +134,68 @@ async def synthesize_note(
             "draft_note": response.text.strip(),
             "cost_usd": response.cost_usd,
         },
+    )
+
+
+def _select_prompt(state: AgentState) -> str:
+    """Pick the synthesiser prompt for the data available on ``state``.
+
+    Priority (highest to lowest):
+    1. Peer context present -> full_with_peers_v1 (superset of full_v1).
+    2. Transcript data (Q&A or commitments) present -> full_v1.
+    3. Language diffs only -> numbers_with_language_v1.
+    4. Numbers only -> numbers_v1.
+
+    The selector is intentionally a small ladder; a fifth arm should be
+    promoted to a registry rather than another elif branch.
+    """
+    if state.peer_context:
+        return _PROMPT_FULL_WITH_PEERS
+    if state.qa_pairs or state.commitments:
+        return _PROMPT_FULL
+    if state.language_diffs:
+        return _PROMPT_WITH_LANGUAGE
+    return _PROMPT_NUMBERS_ONLY
+
+
+def _render_qa_pairs_block(citations: list[QACitation]) -> str:
+    """Render Q&A citations as a numbered question/answer block."""
+    if not citations:
+        return "(no analyst Q&A pairs available)"
+    lines: list[str] = []
+    for c in citations:
+        analyst = c.analyst_name or "unknown"
+        lines.append(f"Q{c.identifier[1:]} (analyst: {analyst}): {c.question_text}")
+        klass = c.answer_class or "unspecified"
+        lines.append(f"A{c.identifier[1:]} [{klass}]: {c.answer_text}")
+    return "\n".join(lines)
+
+
+def _render_commitments_block(citations: list[CommitmentCitation]) -> str:
+    """Render commitment citations as one numbered line per commitment."""
+    if not citations:
+        return "(no management commitments available)"
+    lines: list[str] = []
+    for c in citations:
+        target = c.target_period or "not specified"
+        lines.append(
+            f"{c.identifier} (target: {target}): {c.commitment_text} "
+            f'(source: "{c.source_quote}")'
+        )
+    return "\n".join(lines)
+
+
+def _render_peers_block(citations: list[PeerCitation]) -> str:
+    """Render peer-context citations as a newline-joined block.
+
+    Each line uses the format ``[P{i}] ({peer_ticker}, {kind}) {text}`` so
+    the critic can resolve ``[P#]`` references back to the originating entry.
+    Empty input returns a placeholder that suppresses the peer paragraph.
+    """
+    if not citations:
+        return "(no peer context available)"
+    return "\n".join(
+        f"[{c.identifier}] ({c.peer_ticker}, {c.kind}) {c.text}" for c in citations
     )
 
 

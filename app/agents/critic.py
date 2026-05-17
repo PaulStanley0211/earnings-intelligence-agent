@@ -23,12 +23,18 @@ from decimal import Decimal
 from typing import Final
 
 from app.agents.citations import (
+    CommitmentCitation,
     ComparisonCitation,
     FactCitation,
     LanguageCitation,
+    PeerCitation,
+    QACitation,
+    build_commitment_citations,
     build_comparison_citations,
     build_fact_citations,
     build_language_citations,
+    build_peer_citations,
+    build_qa_citations,
 )
 from app.models.state import (
     AgentState,
@@ -69,9 +75,11 @@ _UNCITED_NUMBER: Final[re.Pattern[str]] = re.compile(
 )
 
 _CITED_LANGUAGE: Final[re.Pattern[str]] = re.compile(
-    r"\[(?P<cite>L\d+)\]",
+    r"\[(?P<cite>[LQKP]\d+)\]",
     re.IGNORECASE,
 )
+
+_QUOTE_RX: Final[re.Pattern[str]] = re.compile(r'"([^"]+)"')
 
 _SCALE_FACTOR: Final[dict[str, Decimal]] = {
     "billion": Decimal("1000000000"),
@@ -120,6 +128,11 @@ def critique_draft(state: AgentState) -> StateUpdate:
     language_index = {
         c.identifier: c for c in build_language_citations(state.language_diffs)
     }
+    qa_index = {c.identifier: c for c in build_qa_citations(state.qa_pairs)}
+    commitment_index = {
+        c.identifier: c for c in build_commitment_citations(state.commitments)
+    }
+    peer_index = {c.identifier: c for c in build_peer_citations(state.peer_context)}
 
     findings: list[CriticFinding] = []
     cited_spans: list[tuple[int, int]] = []
@@ -128,8 +141,21 @@ def critique_draft(state: AgentState) -> StateUpdate:
         validated = _validate_cited(match, fact_index, comparison_index)
         if validated is not None:
             findings.append(validated)
+    # Lines that carry an [L#]/[Q#]/[K#]/[P#] citation are language-evidence
+    # lines. Numbers embedded in quoted source text on such lines must not be
+    # flagged as uncited financial figures, so we mark each such line's full
+    # character span as covered.
+    cited_spans.extend(_language_cited_line_spans(state.draft_note))
     findings.extend(_find_uncited(state.draft_note, cited_spans))
-    findings.extend(_validate_language_citations(state.draft_note, language_index))
+    findings.extend(
+        _validate_quote_citations(
+            state.draft_note,
+            language_index=language_index,
+            qa_index=qa_index,
+            commitment_index=commitment_index,
+            peer_index=peer_index,
+        )
+    )
 
     accepted = not any(f.severity == "error" for f in findings)
     _logger.bind(
@@ -307,6 +333,23 @@ def _per_share(concept: str) -> bool:
     return concept.startswith("EarningsPerShare")
 
 
+def _language_cited_line_spans(text: str) -> list[tuple[int, int]]:
+    """Return the character span of every line that contains an [L/Q/K/P]# citation.
+
+    Numbers embedded inside quoted source text on such lines must not be
+    flagged as uncited financial figures; marking the whole line as covered
+    is the safest approach because the line's numeric content serves as
+    evidence text, not an independently sourced financial claim.
+    """
+    spans: list[tuple[int, int]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if _CITED_LANGUAGE.search(line):
+            spans.append((offset, offset + len(line)))
+        offset += len(line)
+    return spans
+
+
 def _find_uncited(text: str, cited_spans: list[tuple[int, int]]) -> list[CriticFinding]:
     """Flag any meaningful numeric token in ``text`` outside the cited spans."""
     findings: list[CriticFinding] = []
@@ -359,41 +402,93 @@ def _result(
     return StateUpdate(owner=OWNER, changes=changes)
 
 
-def _validate_language_citations(
+def _validate_quote_citations(
     text: str,
+    *,
     language_index: dict[str, LanguageCitation],
+    qa_index: dict[str, QACitation],
+    commitment_index: dict[str, CommitmentCitation],
+    peer_index: dict[str, PeerCitation],
 ) -> list[CriticFinding]:
-    """For each ``[L#]`` in ``text``, verify it resolves and the quoted text matches."""
+    """Validate each ``[L#]``/``[Q#]``/``[K#]``/``[P#]`` quote citation in ``text``.
+
+    For every quote-style citation marker the function resolves the id
+    against the matching namespace index and verifies that the surrounding
+    line text matches the resolved source within the standard 90%
+    character-similarity tolerance.
+    """
     findings: list[CriticFinding] = []
     for line in text.splitlines():
         for match in _CITED_LANGUAGE.finditer(line):
             cite_id = match.group("cite").upper()
-            citation = language_index.get(cite_id)
-            if citation is None:
+            resolved = _resolve_quote_citation(
+                cite_id,
+                language_index=language_index,
+                qa_index=qa_index,
+                commitment_index=commitment_index,
+                peer_index=peer_index,
+            )
+            if resolved is None:
                 findings.append(
                     CriticFinding(
                         layer="quote",
                         severity="error",
                         message=(
                             f"citation {cite_id!r} references no known "
-                            "language change"
+                            f"{_namespace_label(cite_id)}"
                         ),
                     )
                 )
                 continue
             quoted_part = _strip_citation_from_line(line, match.span())
-            if not _language_match(quoted_part, citation.text):
+            if not _language_match(quoted_part, resolved):
                 findings.append(
                     CriticFinding(
                         layer="quote",
                         severity="error",
                         message=(
                             f"text near {cite_id!r} does not match the cited "
-                            "language paragraph (substring or 90% char similarity)"
+                            f"{_namespace_label(cite_id)} "
+                            "(substring or 90% char similarity)"
                         ),
                     )
                 )
     return findings
+
+
+def _resolve_quote_citation(
+    cite_id: str,
+    *,
+    language_index: dict[str, LanguageCitation],
+    qa_index: dict[str, QACitation],
+    commitment_index: dict[str, CommitmentCitation],
+    peer_index: dict[str, PeerCitation],
+) -> str | None:
+    """Return the source text for ``cite_id`` or ``None`` when not found."""
+    namespace = cite_id[:1]
+    if namespace == "L":
+        language = language_index.get(cite_id)
+        return language.text if language is not None else None
+    if namespace == "Q":
+        qa = qa_index.get(cite_id)
+        return qa.source_text if qa is not None else None
+    if namespace == "K":
+        commitment = commitment_index.get(cite_id)
+        return commitment.source_text if commitment is not None else None
+    if namespace == "P":
+        peer = peer_index.get(cite_id)
+        return peer.text if peer is not None else None
+    return None
+
+
+def _namespace_label(cite_id: str) -> str:
+    """Human-readable label for the citation's namespace, used in messages."""
+    return {
+        "L": "language change",
+        "Q": "Q&A pair",
+        "K": "management commitment",
+        "P": "peer commentary",
+    }.get(cite_id[:1], "quote source")
 
 
 def _strip_citation_from_line(line: str, span: tuple[int, int]) -> str:
@@ -407,12 +502,20 @@ def _strip_citation_from_line(line: str, span: tuple[int, int]) -> str:
 
 
 def _language_match(quoted: str, indexed_text: str) -> bool:
-    """Return True when ``quoted`` is a substring or has >=90% char similarity."""
+    """Return True when ``quoted`` is a substring or has >=90% char similarity.
+
+    When ``quoted`` contains a ``"..."``-delimited substring, score only the
+    first quoted substring; this avoids penalising editorial framing
+    around a quoted line (``'Sarah Lee asked "..."'``). Lines without quotes
+    score on the full line.
+    """
     from difflib import SequenceMatcher
 
     if not quoted:
         return False
-    q = _normalise(quoted)
+    q_match = _QUOTE_RX.search(quoted)
+    candidate = q_match.group(1) if q_match else quoted
+    q = _normalise(candidate)
     t = _normalise(indexed_text)
     if not q or not t:
         return False

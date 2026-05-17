@@ -194,6 +194,122 @@ async def test_acomplete_records_spend_to_repository(
     assert repo.adds[0] > Decimal("0")
 
 
+def test_supports_temperature_returns_false_for_opus_4_7() -> None:
+    """Opus 4.7 deprecated the temperature parameter at the Anthropic API."""
+    from app.llm.client import _supports_temperature
+
+    assert _supports_temperature("claude-opus-4-7") is False
+
+
+def test_supports_temperature_returns_false_for_opus_4_7_1m() -> None:
+    """The 1M-context variant of Opus 4.7 shares the temperature deprecation."""
+    from app.llm.client import _supports_temperature
+
+    assert _supports_temperature("claude-opus-4-7[1m]") is False
+
+
+def test_supports_temperature_returns_true_for_sonnet_4_6() -> None:
+    """Sonnet 4.6 still accepts the temperature parameter."""
+    from app.llm.client import _supports_temperature
+
+    assert _supports_temperature("claude-sonnet-4-6") is True
+
+
+def test_supports_temperature_returns_true_for_haiku() -> None:
+    """Haiku still accepts the temperature parameter."""
+    from app.llm.client import _supports_temperature
+
+    assert _supports_temperature("claude-haiku-4-5-20251001") is True
+
+
+def test_complete_omits_temperature_for_opus_4_7(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sync complete() kwargs must not include temperature for Opus 4.7."""
+    monkeypatch.setenv("REC", "1")
+    stub = _stub_anthropic(text="opus-no-temp")
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=stub)
+    client.complete(
+        prompt_version="opus-no-temp/v1",
+        messages=[{"role": "user", "content": "hi"}],
+        model="claude-opus-4-7",
+    )
+    stub.messages.create.assert_called_once()
+    _, kwargs = stub.messages.create.call_args
+    assert "temperature" not in kwargs, (
+        "Opus 4.7 deprecated temperature; the kwargs must omit it."
+    )
+    assert kwargs["model"] == "claude-opus-4-7"
+
+
+def test_complete_passes_temperature_for_sonnet(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sonnet must still receive the temperature parameter."""
+    monkeypatch.setenv("REC", "1")
+    stub = _stub_anthropic(text="sonnet-with-temp")
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=stub)
+    client.complete(
+        prompt_version="sonnet-temp/v1",
+        messages=[{"role": "user", "content": "hi"}],
+        model="claude-sonnet-4-6",
+        temperature=0.0,
+    )
+    stub.messages.create.assert_called_once()
+    _, kwargs = stub.messages.create.call_args
+    assert kwargs.get("temperature") == 0.0
+
+
+async def test_acomplete_omits_temperature_for_opus_4_7(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async acomplete() kwargs must not include temperature for Opus 4.7."""
+    monkeypatch.setenv("REC", "1")
+    repo = _StubSpendRepository()
+    stub = _stub_anthropic(text="opus-async-no-temp")
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=stub)
+    await client.acomplete(
+        prompt_version="opus-async-no-temp/v1",
+        messages=[{"role": "user", "content": "hi"}],
+        repository=repo,
+        model="claude-opus-4-7",
+    )
+    stub.messages.create.assert_called_once()
+    _, kwargs = stub.messages.create.call_args
+    assert "temperature" not in kwargs, (
+        "Opus 4.7 deprecated temperature; acomplete must omit it from API kwargs."
+    )
+    assert kwargs["model"] == "claude-opus-4-7"
+
+
+async def test_acomplete_passes_temperature_for_sonnet(
+    cassette_dir: Path,
+    fresh_settings: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sonnet via acomplete() must still receive the temperature parameter."""
+    monkeypatch.setenv("REC", "1")
+    repo = _StubSpendRepository()
+    stub = _stub_anthropic(text="sonnet-async-with-temp")
+    client = LLMClient(cassette_dir=cassette_dir, anthropic_client=stub)
+    await client.acomplete(
+        prompt_version="sonnet-async-temp/v1",
+        messages=[{"role": "user", "content": "hi"}],
+        repository=repo,
+        model="claude-sonnet-4-6",
+        temperature=0.0,
+    )
+    stub.messages.create.assert_called_once()
+    _, kwargs = stub.messages.create.call_args
+    assert kwargs.get("temperature") == 0.0
+
+
 async def test_acomplete_fails_closed_when_db_spend_exceeds_cap(
     cassette_dir: Path,
     fresh_settings: None,

@@ -1,0 +1,83 @@
+{
+  "transcript_file": "transcript_googl_q3_2026.txt",
+  "qa_pairs": [
+    {
+      "ordinal": 1,
+      "analyst_name": "Eric Sheridan",
+      "analyst_firm": "Goldman Sachs",
+      "question_text": "Sundar, can you give us a sense of how monetisation in AI Overviews and AI Mode compares to traditional blue-link search results, and whether there is any commercial query mix shift you are seeing as users adopt these formats?",
+      "answer_text": "Eric, monetisation in AI Overviews has converged with traditional Search and is now at parity on a per-query basis. AI Mode has reached approximately 85 percent of traditional Search monetisation and is still maturing. We are not yet ready to share the specific commercial query mix between the two formats. What I will say is that commercial intent queries continue to be the largest share of overall query volume and that share has been very stable.",
+      "answer_class": "partial"
+    },
+    {
+      "ordinal": 2,
+      "analyst_name": "Brian Nowak",
+      "analyst_firm": "Morgan Stanley",
+      "question_text": "On the capex step-up to 88 billion, can you walk through what is driving the increase versus prior guidance, and how confident you are in the demand signals you are responding to?",
+      "answer_text": "Brian, the increase reflects three things: stronger than expected Cloud demand pull-through, expanded build for our internal Gemini training and serving fleet, and selective land and infrastructure pre-positioning in markets where we expect to build in 2027 and 2028. On demand signals, Cloud RPO grew 38 percent year over year and the weighted average duration of new bookings extended by approximately four months versus the prior year quarter. We are not building speculatively.",
+      "answer_class": "direct"
+    },
+    {
+      "ordinal": 3,
+      "analyst_name": "Doug Anmuth",
+      "analyst_firm": "JP Morgan",
+      "question_text": "On YouTube, can you give us an update on the Shorts monetisation gap closure trajectory and any specific commentary on Shorts ad RPMs?",
+      "answer_text": "Doug, Shorts monetisation continues to close the gap with in-stream. We are not breaking out specific RPM numbers today. The Shorts product is performing in line with our expectations and we are pleased with the engagement and advertiser uptake. We will share more detail on Shorts unit economics at our investor day next year.",
+      "answer_class": "deflected"
+    },
+    {
+      "ordinal": 4,
+      "analyst_name": "Justin Post",
+      "analyst_firm": "Bank of America",
+      "question_text": "On Waymo, the rider trips growth has been very strong. Can you give us specific numbers on weekly trips and tell us when you expect Waymo to be in 25 cities?",
+      "answer_text": "Justin, Waymo is now serving over 350,000 paid rider trips per week across our launched markets, up from approximately 210,000 last quarter. We launched in three additional cities in Q3, bringing our total operating footprint to 11 cities. We expect to reach more than 20 cities by the end of 2027.",
+      "answer_class": "direct"
+    },
+    {
+      "ordinal": 5,
+      "analyst_name": "Mark Mahaney",
+      "analyst_firm": "Evercore",
+      "question_text": "Anat, on Google Cloud margins, you reported 19.8 percent operating margin this quarter. How should we think about the trajectory from here, particularly given the capex ramp will pull depreciation higher?",
+      "answer_text": "Mark, we expect Cloud operating margins to continue to expand on a full-year basis, though the trajectory will not be linear quarter to quarter as depreciation steps up. We expect full-year 2027 Cloud operating margin to be in the low 20 percent range. Beyond that we are not providing specific guidance.",
+      "answer_class": "direct"
+    },
+    {
+      "ordinal": 6,
+      "analyst_name": "Michael Nathanson",
+      "analyst_firm": "MoffettNathanson",
+      "question_text": "On regulatory matters, there have been several developments around the Search remedies case in the United States. Can you give us your latest read on potential business impact and timing?",
+      "answer_text": "Michael, we continue to engage constructively with the Department of Justice and we have appealed key aspects of the underlying ruling. I am not going to comment on potential business outcomes given the litigation is ongoing. Our focus operationally is to keep building great products for our users.",
+      "answer_class": "deflected"
+    },
+    {
+      "ordinal": 7,
+      "analyst_name": "Ross Sandler",
+      "analyst_firm": "Barclays",
+      "question_text": "On the consumer Gemini app, the 480 million MAU is impressive. Can you talk about the monetisation strategy and whether you expect Gemini consumer subscriptions to be a material revenue line in the next 12 months?",
+      "answer_text": "Ross, the consumer Gemini monetisation strategy has two legs: paid subscriptions under the Google AI Premium tier, and advertising within the conversational experience over time. We launched the Premium tier in May and we are seeing strong attach. We expect Gemini subscription revenue to cross 5 billion dollars on an annualised basis by the end of fiscal 2027. We are not yet ready to share specific timing on advertising-enabled Gemini formats.",
+      "answer_class": "direct"
+    }
+  ],
+  "commitments": [
+    {
+      "commitment_text": "Full-year 2026 capital expenditure to be approximately 88 billion dollars.",
+      "target_period": "FY2026",
+      "source_quote": "We now expect full-year 2026 capex to be approximately 88 billion dollars, up from our prior guidance of 80 billion."
+    },
+    {
+      "commitment_text": "Waymo to reach more than 20 cities by the end of 2027.",
+      "target_period": "end of 2027",
+      "source_quote": "We expect to reach more than 20 cities by the end of 2027."
+    },
+    {
+      "commitment_text": "Full-year 2027 Google Cloud operating margin to be in the low 20 percent range.",
+      "target_period": "FY2027",
+      "source_quote": "We expect full-year 2027 Cloud operating margin to be in the low 20 percent range."
+    },
+    {
+      "commitment_text": "Gemini subscription revenue to cross 5 billion dollars on an annualised basis by the end of fiscal 2027.",
+      "target_period": "FY2027",
+      "source_quote": "We expect Gemini subscription revenue to cross 5 billion dollars on an annualised basis by the end of fiscal 2027."
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "ticker": "MSFT",
+    "cik": "0000789019",
+    "as_of_date": "2026-05-01",
+    "expected_latest_8k_accession": "0001193125-26-191457"
+  },
+  {
+    "ticker": "NVDA",
+    "cik": "0001045810",
+    "as_of_date": "2026-03-01",
+    "expected_latest_8k_accession": "0001045810-26-000019"
+  },
+  {
+    "ticker": "GOOGL",
+    "cik": "0001652044",
+    "as_of_date": "2026-02-15",
+    "expected_latest_8k_accession": "0001193125-26-051423"
+  },
+  {
+    "ticker": "META",
+    "cik": "0001326801",
+    "as_of_date": "2026-02-15",
+    "expected_latest_8k_accession": "0001628280-26-003832"
+  },
+  {
+    "ticker": "AAPL",
+    "cik": "0000320193",
+    "as_of_date": "2026-02-15",
+    "expected_latest_8k_accession": "0000320193-26-000005"
+  },
+  {
+    "ticker": "JPM",
+    "cik": "0000019617",
+    "as_of_date": "2026-04-30",
+    "expected_latest_8k_accession": "0000019617-26-000119"
+  },
+  {
+    "ticker": "XOM",
+    "cik": "0000034088",
+    "as_of_date": "2026-05-15",
+    "expected_latest_8k_accession": "0000034088-26-000069"
+  },
+  {
+    "ticker": "JNJ",
+    "cik": "0000200406",
+    "as_of_date": "2026-04-30",
+    "expected_latest_8k_accession": "0000200406-26-000089"
+  },
+  {
+    "ticker": "KO",
+    "cik": "0000021344",
+    "as_of_date": "2026-05-15",
+    "expected_latest_8k_accession": "0001628280-26-029230"
+  },
+  {
+    "ticker": "COST",
+    "cik": "0000909832",
+    "as_of_date": "2026-03-31",
+    "expected_latest_8k_accession": "0000909832-26-000025"
+  }
+]

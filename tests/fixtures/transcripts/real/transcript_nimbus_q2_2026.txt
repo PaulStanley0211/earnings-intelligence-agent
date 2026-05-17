@@ -1,0 +1,61 @@
+Operator: Good afternoon and welcome to the Nimbus Systems fiscal second quarter 2026 earnings conference call. At this time all participants are in a listen-only mode. Following the prepared remarks we will conduct a question and answer session. I would now like to turn the call over to Priya Raman, Vice President of Investor Relations. Please go ahead.
+
+Priya Raman: Thank you operator and good afternoon everyone. On the call with me today are Daniel Cho, Chief Executive Officer, and Helena Vargas, Chief Financial Officer. Statements made during this call that are not statements of historical fact are forward-looking statements and are subject to the risks and uncertainties discussed in our most recent filings. I will now turn the call over to Daniel.
+
+Daniel Cho: Thanks Priya. Nimbus delivered a strong second quarter. Total revenue grew 28 percent year over year to 612 million dollars, with our flagship Stratus observability platform contributing 414 million, up 34 percent. Net new annual recurring revenue was 71 million dollars in the quarter, our largest Q2 net add on record. We continue to see strong demand from enterprise customers consolidating onto Stratus from legacy point tools. We now have 187 customers contributing more than one million dollars in ARR, up from 154 a year ago. Looking ahead, we expect to close the previously announced Cirrus Analytics acquisition by the end of fiscal Q3 2026, which will materially expand our footprint in real-time log analytics.
+
+Helena Vargas: Thanks Daniel. Non-GAAP operating margin for the quarter was 18.4 percent, up roughly 220 basis points year over year. Free cash flow was 102 million dollars, representing a free-cash-flow margin of 16.7 percent. We ended the quarter with 1.9 billion dollars in cash and short-term investments. We are reiterating our previously communicated full-year fiscal 2026 revenue guidance of 2.55 to 2.60 billion dollars, and we now expect full-year non-GAAP operating margin to land at approximately 19 percent, up from our prior guidance of 18 percent. We also expect to deliver positive GAAP operating income for the full fiscal year 2026, which would be a first for Nimbus. With that let us move to questions.
+
+Operator: Our first question comes from Aaron Mitchell of Stifel.
+
+Analyst: Aaron Mitchell from Stifel. Daniel, can you give us more color on the Cirrus Analytics integration plan? Specifically when do you expect Cirrus capabilities to be available natively inside the Stratus console, and have you sized the cross-sell opportunity for fiscal 2027?
+
+CEO: Daniel Cho. Aaron, we are very enthusiastic about the Cirrus combination. Subject to closing the deal by the end of fiscal Q3, we expect native Cirrus query capabilities to be generally available inside the Stratus console by the end of fiscal Q4 2026. On cross-sell, our early modelling points to roughly 40 million dollars of incremental ARR from existing Stratus customers adopting Cirrus during fiscal 2027, but we will refresh that view once the deal closes and integration kicks off in earnest.
+
+Operator: Our next question comes from Marcia Liu of William Blair.
+
+Analyst: Marcia Liu from William Blair. Helena, the margin guide raise is encouraging. How much of that comes from operating leverage versus the hiring slowdown you flagged last quarter, and is the 19 percent target conservative given the Q2 print?
+
+CFO: Helena Vargas. Marcia, of the roughly 100 basis points of incremental margin in our updated full-year view, we would attribute about 60 basis points to the hiring slowdown taking hold faster than we modelled and about 40 basis points to underlying gross-margin improvement in Stratus. We feel good about the 19 percent target but we are deliberately leaving room for additional R and D investment in Cirrus post-close, so we would not characterise the guide as deeply conservative.
+
+Operator: Our next question comes from Theo Bennett of Raymond James.
+
+Analyst: Theo Bennett from Raymond James. Daniel, your competitor announced a generative-AI assistant for their observability platform last month. What is Nimbus's roadmap on the AI-assist front, and when can we expect to see something in market?
+
+CEO: Daniel Cho. Theo, we have been building the underlying capability for several quarters and we plan to launch our Stratus Copilot product into general availability by the end of fiscal Q4 2026. We will preview the product at our user conference in November. We are taking a deliberately enterprise-grade approach, with role-based access controls, audit logging, and data-residency guarantees baked in from day one, which is what enterprise CIOs are telling us they need before they will roll out AI assistants in production.
+
+Operator: Our next question comes from Sandra Okonkwo of Needham.
+
+Analyst: Sandra Okonkwo from Needham. On the international side, your last call called out softness in EMEA enterprise. Has that environment changed and what are you assuming for second-half international growth?
+
+CFO: Helena Vargas. Sandra, EMEA improved sequentially in Q2. Net new ARR from EMEA enterprise was up 22 percent quarter over quarter, although still down approximately 5 percent year over year. We are not yet ready to call a full recovery in EMEA. Our second-half guidance assumes EMEA returns to mid-single-digit year-over-year growth by fiscal Q4 2026, but we have built some cushion into the consolidated forecast in case that recovery slips.
+
+Operator: Our next question comes from Greg Hammond of Truist.
+
+Analyst: Greg Hammond from Truist. Daniel, on the customer concentration question. Your top-ten customers contributed roughly 18 percent of ARR last fiscal year. Can you give us an updated view on where that stands today and where you would like it to be over the medium term?
+
+CEO: Daniel Cho. Greg, top-ten customer concentration at the end of Q2 was approximately 16 percent of ARR, down from 18 percent at the end of fiscal 2025, which reflects the diversification we have been driving. We would like to see that number trend toward 14 percent over the next 18 months, but I want to be clear that we are not actively trying to limit growth at our largest accounts. The trend reflects faster growth in the long tail.
+
+Operator: Our next question comes from Yuki Tanaka of Wells Fargo.
+
+Analyst: Yuki Tanaka from Wells Fargo. Helena, can you give us any update on the share repurchase program? You authorised 500 million dollars at the start of fiscal 2026 and you bought back roughly 80 million in Q1. What is the pacing assumption for the rest of the year?
+
+CFO: Helena Vargas. Yuki, we repurchased an additional 95 million dollars of stock in Q2, taking year-to-date buybacks to 175 million dollars. We expect to fully exhaust the 500 million dollar authorisation by the end of fiscal 2026. The Board will revisit the authorisation level at the start of fiscal 2027.
+
+Operator: Our next question comes from Robert Esquivel of Cowen.
+
+Analyst: Robert Esquivel from Cowen. Daniel, broader question on platform consolidation. How are you positioning Nimbus against the hyperscalers' native observability offerings, and are you seeing any of your enterprise customers re-platform off Stratus onto those native tools?
+
+CEO: Daniel Cho. Robert, our win rate against the hyperscaler-native offerings remained above 75 percent in Q2 in competitive deals we tracked. The pattern we see is that enterprise customers want a single pane of glass across multi-cloud and on-premise estates, and hyperscaler-native tools by definition do not offer that. We have not lost a single seven-figure customer to a hyperscaler-native tool in the last twelve months. That said we monitor the competitive landscape closely.
+
+Operator: Our final question comes from Annette Bohr of Piper Sandler.
+
+Analyst: Annette Bohr from Piper Sandler. Quick housekeeping. Can you confirm the expected timing of your fiscal 2027 financial-framework update? And is there any change to the medium-term 25 percent free-cash-flow margin target?
+
+CFO: Helena Vargas. Annette, we plan to host our fiscal 2027 analyst day in late February 2027 where we will provide a refreshed multi-year financial framework. The medium-term 25 percent free-cash-flow margin target remains our north star and we are not changing it today.
+
+Operator: That concludes our Q&A session. I would like to turn the call back over to Daniel for closing remarks.
+
+Daniel Cho: Thank you all for joining today. We are pleased with the second quarter and we look forward to seeing many of you at our user conference in November. Thanks again.
+
+Operator: This concludes today's conference call. You may disconnect.

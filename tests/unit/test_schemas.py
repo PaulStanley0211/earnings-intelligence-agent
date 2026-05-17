@@ -48,6 +48,26 @@ def test_new_language_diff_defaults_optional_fields():
     assert row.similarity is None
 
 
+# ---- Phase 5B: peer context DTOs ----
+
+
+def test_peer_create_validates_no_self_reference() -> None:
+    import pytest
+
+    from app.memory.schemas import PeerCreate
+
+    with pytest.raises(ValueError):
+        PeerCreate(ticker="MSFT", peer_ticker="MSFT")
+
+
+def test_peer_signals_defaults_to_empty() -> None:
+    from app.memory.schemas import PeerSignals
+
+    sig = PeerSignals(language_diffs=[], commitments=[])
+    assert sig.language_diffs == []
+    assert sig.commitments == []
+
+
 def test_filing_section_record_from_attributes():
     class _Stub:
         id = 1
@@ -84,3 +104,24 @@ def test_language_diff_record_serialises_similarity():
     assert record.change_type == ChangeType.MODIFIED
     assert record.severity == Severity.MINOR
     assert record.similarity == Decimal("0.8400")
+
+
+def test_note_create_round_trips_through_pydantic() -> None:
+    """NoteCreate is frozen, validates sha length, and survives a JSON round-trip."""
+    from app.memory.schemas import NoteCreate
+
+    note = NoteCreate(
+        filing_accession="0000123-25-000001",
+        ticker="MSFT",
+        markdown_body="# Microsoft Q3 FY25\n\nRevenue rose [F1].",
+        prompt_template_name="synthesizer/full_v1",
+        prompt_template_sha="a" * 64,
+        critic_attempts=1,
+    )
+    assert note.filing_accession == "0000123-25-000001"
+    assert note.ticker == "MSFT"
+    assert len(note.prompt_template_sha) == 64
+
+    # Round-trip via model_dump_json -> validate
+    rebuilt = NoteCreate.model_validate_json(note.model_dump_json())
+    assert rebuilt == note

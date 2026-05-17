@@ -1,0 +1,8 @@
+{
+  "cost_usd": 0.06294,
+  "input_tokens": 4141,
+  "model": "claude-opus-4-7",
+  "output_tokens": 11,
+  "prompt_version": "critic/llm_v1@v1#caa9e21b",
+  "text": "{\"findings\": []}"
+}

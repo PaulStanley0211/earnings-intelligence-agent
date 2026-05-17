@@ -9,9 +9,14 @@ from pydantic import ValidationError
 
 from app.models.state import (
     AgentState,
+    AnswerClass,
+    CommitmentExtracted,
+    CommitmentStatus,
+    CommitmentStatusUpdate,
     CriticVerdict,
     FilingEvent,
     FilingForm,
+    QAPairPayload,
     StateUpdate,
 )
 
@@ -137,3 +142,151 @@ def test_filing_event_accepts_upload_source() -> None:
         source=FilingEventSource.UPLOAD,
     )
     assert event.source is FilingEventSource.UPLOAD
+
+
+# ---- Phase 4B: transcript analyzer state fields ----
+
+
+def _build_qa_pair(ordinal: int = 1) -> QAPairPayload:
+    return QAPairPayload(
+        ordinal=ordinal,
+        analyst_name="Analyst A",
+        question_text="q",
+        answer_text="a",
+        answer_class=AnswerClass.DIRECT,
+        sha256_text="0" * 64,
+    )
+
+
+def test_phase4b_fields_default_empty() -> None:
+    """A freshly built AgentState has empty qa_pairs / commitments / commitment_updates."""
+    state = _build_state()
+    assert state.qa_pairs == []
+    assert state.commitments == []
+    assert state.commitment_updates == []
+
+
+def test_qa_pairs_applied_by_transcript_analyzer() -> None:
+    state = _build_state()
+    update = StateUpdate(
+        owner="transcript_analyzer",
+        changes={"qa_pairs": [_build_qa_pair()]},
+    )
+    new_state = update.apply(state)
+    assert len(new_state.qa_pairs) == 1
+    assert new_state.qa_pairs[0].ordinal == 1
+    assert new_state.qa_pairs[0].answer_class is AnswerClass.DIRECT
+
+
+def test_commitments_applied_by_transcript_analyzer() -> None:
+    state = _build_state()
+    commitment = CommitmentExtracted(
+        commitment_text="We will launch X in Q3 2026.",
+        target_period="Q3 2026",
+        source_quote="we will launch X in Q3 2026",
+    )
+    update = StateUpdate(
+        owner="transcript_analyzer",
+        changes={"commitments": [commitment]},
+    )
+    new_state = update.apply(state)
+    assert len(new_state.commitments) == 1
+    assert new_state.commitments[0].target_period == "Q3 2026"
+
+
+def test_commitment_updates_applied_by_transcript_analyzer() -> None:
+    state = _build_state()
+    update_payload = CommitmentStatusUpdate(
+        commitment_id=42,
+        new_status=CommitmentStatus.MET,
+        reason="Management confirmed launch.",
+    )
+    update = StateUpdate(
+        owner="transcript_analyzer",
+        changes={"commitment_updates": [update_payload]},
+    )
+    new_state = update.apply(state)
+    assert len(new_state.commitment_updates) == 1
+    assert new_state.commitment_updates[0].commitment_id == 42
+    assert new_state.commitment_updates[0].new_status is CommitmentStatus.MET
+
+
+@pytest.mark.parametrize(
+    ("owner", "field", "payload"),
+    [
+        ("comparator", "qa_pairs", [_build_qa_pair()]),
+        (
+            "synthesizer",
+            "commitments",
+            [
+                CommitmentExtracted(
+                    commitment_text="t", target_period=None, source_quote="q"
+                )
+            ],
+        ),
+        (
+            "language_differ",
+            "commitment_updates",
+            [
+                CommitmentStatusUpdate(
+                    commitment_id=1,
+                    new_status=CommitmentStatus.STILL_OPEN,
+                    reason="r",
+                )
+            ],
+        ),
+    ],
+)
+def test_phase4b_fields_rejected_for_other_owners(
+    owner: str,
+    field: str,
+    payload: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        StateUpdate(owner=owner, changes={field: payload})
+
+
+def test_phase4b_payloads_are_frozen() -> None:
+    """In-state payload models are immutable."""
+    pair = _build_qa_pair()
+    commitment = CommitmentExtracted(
+        commitment_text="t", target_period=None, source_quote="q"
+    )
+    status_update = CommitmentStatusUpdate(
+        commitment_id=1, new_status=CommitmentStatus.OPEN, reason="r"
+    )
+    with pytest.raises(ValidationError):
+        pair.ordinal = 2  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        commitment.target_period = "x"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        status_update.commitment_id = 99  # type: ignore[misc]
+
+
+# ---- Phase 5a: note_writer state field ----
+
+
+def test_note_writer_owns_persisted_note_id() -> None:
+    update = StateUpdate(owner="note_writer", changes={"persisted_note_id": 42})
+    assert update.changes == {"persisted_note_id": 42}
+
+
+def test_critic_cannot_set_persisted_note_id() -> None:
+    with pytest.raises(ValidationError, match="cannot mutate fields"):
+        StateUpdate(owner="critic", changes={"persisted_note_id": 1})
+
+
+# ---- Phase 5B: peer reader state field ----
+
+
+def test_peer_context_entry_minimal_shape() -> None:
+    from app.models.state import PeerContextEntry
+
+    entry = PeerContextEntry(
+        peer_ticker="GOOGL",
+        kind="commitment",
+        text="We expect cloud growth to accelerate next quarter.",
+        source_filing_accession="0000123-25-000002",
+    )
+    assert entry.kind == "commitment"
+    assert entry.severity is None

@@ -73,10 +73,15 @@ class Filing(Base):
 
     __tablename__ = "filings"
 
-    accession_number: Mapped[str] = mapped_column(String(32), primary_key=True)
+    # Widened from 32 to 64 in Phase 4B (migration 0007) so upload-derived
+    # accessions (e.g. ``upload-{uuid4().hex}`` is 39 chars) fit alongside
+    # the 18-char real SEC accession numbers.
+    accession_number: Mapped[str] = mapped_column(String(64), primary_key=True)
     cik: Mapped[str] = mapped_column(String(10), nullable=False)
     ticker: Mapped[str] = mapped_column(String(16), nullable=False)
-    form: Mapped[str] = mapped_column(String(8), nullable=False)
+    # Widened from 8 to 16 in Phase 4B (migration 0006) so the literal
+    # "TRANSCRIPT" fits alongside the SEC-form abbreviations.
+    form: Mapped[str] = mapped_column(String(16), nullable=False)
     filed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     primary_document: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -94,7 +99,8 @@ class Filing(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "form IN ('10-K', '10-Q', '8-K')", name="filings_form_supported"
+            "form IN ('10-K', '10-Q', '8-K', 'TRANSCRIPT')",
+            name="filings_form_supported",
         ),
         CheckConstraint(
             "status IN ('detected', 'processing', 'processed', 'failed')",
@@ -117,7 +123,7 @@ class FinancialFact(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -271,7 +277,7 @@ class Comparison(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -313,7 +319,7 @@ class FilingSection(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
@@ -362,12 +368,12 @@ class LanguageDiff(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     filing_accession: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="CASCADE"),
         nullable=False,
     )
     prior_filing_accession: Mapped[str | None] = mapped_column(
-        String(32),
+        String(64),
         ForeignKey("filings.accession_number", ondelete="SET NULL"),
         nullable=True,
     )
@@ -442,4 +448,146 @@ class UploadedDocument(Base):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class QAPair(Base):
+    """One analyst Q&A exchange extracted from a transcript filing.
+
+    Append-only. The transcript-analyzer bulk-inserts rows under a single
+    transaction with ``ON CONFLICT DO NOTHING`` on
+    ``(filing_accession, ordinal)`` so re-running the agent on the same
+    transcript is safe.
+    """
+
+    __tablename__ = "qa_pairs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    analyst_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    sha256_text: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "filing_accession",
+            "ordinal",
+            name="uq_qa_pairs_filing_accession_ordinal",
+        ),
+        CheckConstraint(
+            "answer_class IN ('direct', 'partial', 'deflected')",
+            name="qa_pairs_answer_class_valid",
+        ),
+        Index("ix_qa_pairs_filing_accession", "filing_accession"),
+    )
+
+
+class Commitment(Base):
+    """A forward-looking commitment a management team made on the transcript.
+
+    The ``status``, ``resolved_filing_accession``, ``resolved_reason``, and
+    ``updated_at`` columns are the ONLY mutable surface in the memory layer
+    outside the small set of ``filings``/``daily_llm_spend`` updates - the
+    cross-quarter reconciliation pass flips ``open`` to ``met`` / ``missed``
+    / ``still_open`` as later filings arrive.
+    """
+
+    __tablename__ = "commitments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    commitment_text: Mapped[str] = mapped_column(Text, nullable=False)
+    target_period: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="open"
+    )
+    resolved_filing_accession: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("filings.accession_number", ondelete="SET NULL"),
+        nullable=True,
+    )
+    resolved_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'met', 'missed', 'still_open')",
+            name="commitments_status_valid",
+        ),
+        Index("ix_commitments_ticker_status", "ticker", "status"),
+    )
+
+
+class Note(Base):
+    """An accepted synthesized note for one filing.
+
+    Append-only. One row per filing_accession; re-runs return the existing
+    row via ON CONFLICT DO NOTHING. Per-event cost/latency are deliberately
+    not stored here -- a per-event metrics table is deferred to Phase 7.
+    """
+
+    __tablename__ = "notes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    markdown_body: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_template_name: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_template_sha: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    critic_attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_notes_ticker_created", "ticker", "created_at"),
+    )
+
+
+class Peer(Base):
+    """A curated ``(ticker, peer_ticker)`` mapping for the peer reader.
+
+    Append-only via upsert. The ``source`` column is forward-compatible for
+    auto-discovery; currently constrained to ``'curated'``.
+    """
+
+    __tablename__ = "peers"
+
+    ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    peer_ticker: Mapped[str] = mapped_column(String(16), primary_key=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="curated")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("ticker <> peer_ticker", name="peers_no_self_reference"),
+        CheckConstraint("source IN ('curated')", name="peers_source_valid"),
+        Index("ix_peers_ticker", "ticker"),
     )

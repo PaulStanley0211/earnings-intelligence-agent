@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_compiled_graph, get_edgar_client
 from app.main import create_app
-from app.memory.db import build_engine, dispose_engine, get_engine
+from app.memory.db import build_engine, dispose_engine, get_engine, get_session_factory
 from app.memory.models import Base
 from app.memory.repository import Repository
 from app.models.state import AgentState
@@ -268,6 +268,185 @@ async def test_upload_rejects_scanned_pdf(
     assert "scanned" in detail or "extractable" in detail
 
 
+async def test_upload_accepts_transcript_filing_type_plain_text(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """``filing_type=TRANSCRIPT`` with text/plain returns 200 (spec §3.5)."""
+    transcript_body = (
+        b"Operator: Good afternoon and welcome to the Microsoft fiscal Q4 "
+        b"earnings call. With us today are Satya Nadella, chief executive "
+        b"officer, and Amy Hood, chief financial officer.\n\n"
+        b"Satya Nadella: Thank you, and good afternoon, everyone. We had a "
+        b"strong quarter, with revenue of 61.9 billion dollars, up 17 percent "
+        b"year over year. Cloud revenue grew 23 percent. AI-driven workloads "
+        b"continue to drive meaningful customer adoption across all clouds.\n\n"
+        b"Amy Hood: Thanks, Satya. For the full year, we generated 245 "
+        b"billion in revenue. Operating margin expanded 100 basis points. "
+        b"Looking ahead, we expect double-digit revenue and operating-income "
+        b"growth in the coming year as we continue to invest in capacity to "
+        b"meet AI demand.\n\n"
+        b"Analyst (Keith Weiss, Morgan Stanley): Thanks for taking the "
+        b"question. Can you talk about the trajectory of Azure growth into "
+        b"the next year and how to think about capex pacing?\n\n"
+        b"Satya Nadella: Sure. We remain confident in the Azure growth "
+        b"trajectory and we will continue to scale infrastructure to match "
+        b"demand. Amy can speak to the capex framing."
+    )
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "TRANSCRIPT"},
+        files={
+            "file": ("msft-call-q4.txt", transcript_body, "text/plain"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "completed"
+    assert payload["upload_id"]
+
+
+async def test_upload_accepts_transcript_filing_type_pdf(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """``filing_type=TRANSCRIPT`` with application/pdf returns 200.
+
+    Re-uses an existing 8-K fixture for body bytes; the bytes themselves
+    are an arbitrary readable PDF -- the test exercises the API surface,
+    not transcript-specific extraction (the stubbed graph short-circuits
+    the analyzer).
+    """
+    pdf_bytes = (_FIXTURES / "0001193125-26-027198.pdf").read_bytes()
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "TRANSCRIPT"},
+        files={
+            "file": ("msft-call-q4.pdf", pdf_bytes, "application/pdf"),
+        },
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "completed"
+
+
+async def test_upload_rejects_unknown_filing_type(
+    seed_watchlist_msft: None,
+    app_with_stubbed_graph: AsyncClient,
+) -> None:
+    """A filing_type outside the allowlist (8-K/10-Q/10-K/TRANSCRIPT) is rejected."""
+    response = await app_with_stubbed_graph.post(
+        "/api/upload",
+        data={"ticker": "MSFT", "filing_type": "FOO"},
+        files={"file": ("x.txt", b"hello world", "text/plain")},
+    )
+    # FastAPI/Pydantic returns 422 for a Literal-form-field allowlist miss.
+    assert response.status_code == 422, response.text
+
+
+class _VisibilityCheckingGraph:
+    """Stub graph that probes uploaded_documents from a fresh session.
+
+    The probe runs inside ``ainvoke`` so it executes BEFORE the route
+    finishes and the ``get_session`` dependency's tail-commit fires. The
+    fresh session opened from the process-wide :func:`get_session_factory`
+    represents what every real graph node sees: an independent connection
+    that cannot observe writes still pending on the route's session.
+
+    Used by :func:`test_upload_commits_before_graph_invoke` to lock in the
+    Phase 4B Task 11c fix -- without the explicit commit in
+    :func:`app.api.upload.post_upload`, the probe finds no row and the
+    transcript analyzer (and any other node opening its own session) self-
+    skips silently.
+    """
+
+    def __init__(self) -> None:
+        """Record whether the probed upload row was visible from a fresh session."""
+        self.upload_visible: bool = False
+        self.probed_upload_id: str | None = None
+
+    async def ainvoke(
+        self, state: AgentState | dict[str, Any], **_kw: Any
+    ) -> dict[str, Any]:
+        """Probe ``uploaded_documents`` from a fresh session, then return a final state."""
+        if isinstance(state, AgentState):
+            payload: dict[str, Any] = state.model_dump()
+        else:
+            payload = dict(state)
+        filing_event = (
+            state.filing_event
+            if isinstance(state, AgentState)
+            else state.get("filing_event")
+        )
+        assert filing_event is not None, "test stub requires a FilingEvent on state"
+        accession_number = (
+            filing_event.accession_number
+            if hasattr(filing_event, "accession_number")
+            else filing_event["accession_number"]
+        )
+        upload_id = accession_number.removeprefix("upload-")
+        self.probed_upload_id = upload_id
+
+        factory = get_session_factory()
+        async with factory() as fresh_session:
+            doc = await Repository(fresh_session).get_uploaded_document(upload_id)
+            self.upload_visible = doc is not None
+
+        # Keep the response shape valid so the route returns 200.
+        payload["financials"] = {"source": "uploaded"}
+        payload["comparisons"] = {"consensus_source": "finnhub", "metrics": []}
+        payload["language_diffs"] = []
+        payload["draft_note"] = "stub draft [F1]"
+        payload["final_note"] = "stub draft [F1]"
+        payload["critic_verdict"] = "accepted"
+        return payload
+
+
+async def test_upload_commits_before_graph_invoke(
+    seed_watchlist_msft: None,
+) -> None:
+    """The uploaded_documents row must be visible to a separately-opened session
+    before ``graph.ainvoke`` runs, so the transcript_analyzer (or any other graph
+    node opening its own session via :func:`get_session_factory`) can read it.
+
+    Regression for the Phase 4B Task 11c visibility bug: prior to the explicit
+    ``await session.commit()`` between :func:`intake_upload` and
+    ``graph.ainvoke``, the route's session held the INSERT until the request
+    finished, so a fresh session opened inside the graph saw no row.
+    """
+    visibility_graph = _VisibilityCheckingGraph()
+
+    def _provide_visibility_graph() -> _VisibilityCheckingGraph:
+        """Sync dependency override returning the shared probe graph."""
+        return visibility_graph
+
+    app = create_app()
+    app.dependency_overrides[get_edgar_client] = _stub_edgar
+    app.dependency_overrides[get_compiled_graph] = _provide_visibility_graph
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            pdf_bytes = (_FIXTURES / "0001193125-26-027198.pdf").read_bytes()
+            response = await client.post(
+                "/api/upload",
+                data={"ticker": "MSFT", "filing_type": "8-K"},
+                files={"file": ("msft-8k.pdf", pdf_bytes, "application/pdf")},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200, response.text
+    assert visibility_graph.probed_upload_id is not None, (
+        "stub graph should have observed a FilingEvent on state"
+    )
+    assert visibility_graph.upload_visible, (
+        "uploaded_documents row was NOT visible to a fresh session opened "
+        "inside graph.ainvoke -- the route must commit its session BEFORE "
+        "invoking the graph so transcript_analyzer and other nodes that open "
+        "their own sessions via get_session_factory can read the row."
+    )
+
+
 async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> None:
     """``POST /api/chat`` reserves the route; Phase 6 ships the real agent."""
     response = await app_with_stubbed_graph.post(
@@ -276,3 +455,19 @@ async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> Non
     assert response.status_code == 501
     detail = response.json()["detail"].lower()
     assert "phase 6" in detail
+
+
+def test_filing_type_form_literal_matches_filing_form_enum() -> None:
+    """Drift guard: the /api/upload Literal allowlist must mirror FilingForm.
+
+    If a future phase adds a value to :class:`app.models.state.FilingForm`,
+    this test fails until the API ``FilingTypeForm`` Literal is updated to
+    match. Catches the single-line oversight where a new form lands in the
+    enum but the route still rejects it at the boundary with a 422.
+    """
+    from typing import get_args
+
+    from app.api.upload import FilingTypeForm
+    from app.models.state import FilingForm
+
+    assert set(get_args(FilingTypeForm)) == {m.value for m in FilingForm}

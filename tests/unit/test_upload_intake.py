@@ -7,6 +7,9 @@ import pytest
 
 from app.agents.upload_intake import intake_upload
 from app.memory.schemas import (
+    FilingRecord,
+    FilingStatus,
+    NewFiling,
     NewUploadedDocument,
     UploadedDocumentRecord,
     WatchlistRecord,
@@ -19,6 +22,8 @@ class _FakeRepository:
 
     def __init__(self) -> None:
         self.saved: list[UploadedDocumentRecord] = []
+        self.filings: dict[str, FilingRecord] = {}
+        self.record_filing_calls: list[NewFiling] = []
         self._next_id = 1
 
     async def add_uploaded_document(
@@ -60,6 +65,32 @@ class _FakeRepository:
             active=True,
             added_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
+
+    async def record_filing(self, *, filing: NewFiling) -> FilingRecord | None:
+        """Mirror :meth:`Repository.record_filing`: idempotent on accession.
+
+        Returns ``None`` on a second call with the same accession_number so
+        callers see the same shape as the production ON CONFLICT DO NOTHING.
+        """
+        self.record_filing_calls.append(filing)
+        if filing.accession_number in self.filings:
+            return None
+        record = FilingRecord(
+            accession_number=filing.accession_number,
+            cik=filing.cik,
+            ticker=filing.ticker,
+            form=filing.form,
+            filed_at=filing.filed_at,
+            source_url=filing.source_url,
+            primary_document=None,
+            report_period_end=filing.report_period_end,
+            status=FilingStatus.DETECTED,
+            processed_at=None,
+            error_message=None,
+            created_at=datetime.now(UTC),
+        )
+        self.filings[filing.accession_number] = record
+        return record
 
 
 @pytest.mark.asyncio
@@ -151,6 +182,96 @@ async def test_intake_rejects_unsupported_filing_type() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intake_records_filing_row_for_upload_accession() -> None:
+    """intake_upload writes a corresponding ``filings`` row for the upload-derived accession.
+
+    Without this, downstream agents (transcript_analyzer, comparator,
+    language_differ) that persist to qa_pairs / commitments / comparisons /
+    language_diffs hit FK violations because each of those tables references
+    ``filings.accession_number``. The repository call is idempotent on
+    accession, so a re-run with the same upload bytes is safe.
+    """
+    repo = _FakeRepository()
+    parsed = ParsedDocument(
+        text="Operator: Welcome to the call.",
+        char_count=30,
+        page_count=None,
+        content_sha256="b" * 64,
+    )
+    event = await intake_upload(
+        ticker="MSFT",
+        filing_type="TRANSCRIPT",
+        original_filename="msft-q4-transcript.txt",
+        parsed=parsed,
+        repository=repo,
+    )
+    assert event.accession_number in repo.filings
+    persisted = repo.filings[event.accession_number]
+    assert persisted.accession_number.startswith("upload-")
+    assert persisted.ticker == "MSFT"
+    assert persisted.cik == "0000789019"
+    assert persisted.form.value == "TRANSCRIPT"
+    assert persisted.source_url.startswith("upload://")
+    # Upload-derived rows have no canonical report-period end.
+    assert persisted.report_period_end is None
+    # And the call shape matches what the route observes.
+    assert len(repo.record_filing_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_intake_records_filing_row_is_idempotent_on_duplicate_sha256() -> None:
+    """Re-uploading the same bytes must not break the idempotent filings insert."""
+    repo = _FakeRepository()
+    parsed = ParsedDocument(
+        text="hi", char_count=2, page_count=1, content_sha256="i" * 64
+    )
+    e1 = await intake_upload(
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="x.pdf",
+        parsed=parsed,
+        repository=repo,
+    )
+    e2 = await intake_upload(
+        ticker="MSFT",
+        filing_type="8-K",
+        original_filename="x.pdf",
+        parsed=parsed,
+        repository=repo,
+    )
+    # Same accession on both calls; filings table holds exactly one row;
+    # record_filing was called twice (second call is a no-op via ON CONFLICT).
+    assert e1.accession_number == e2.accession_number
+    assert len(repo.filings) == 1
+    assert len(repo.record_filing_calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_intake_accepts_transcript_filing_type() -> None:
+    """``TRANSCRIPT`` is in the Phase 4B form allowlist (spec §3.5)."""
+    from app.models.state import FilingForm
+
+    repo = _FakeRepository()
+    parsed = ParsedDocument(
+        text="Operator: Good afternoon and welcome to the call.",
+        char_count=49,
+        page_count=None,
+        content_sha256="a" * 64,
+    )
+    event = await intake_upload(
+        ticker="MSFT",
+        filing_type="TRANSCRIPT",
+        original_filename="msft-call-q4.txt",
+        parsed=parsed,
+        repository=repo,
+    )
+    assert event.form is FilingForm.TRANSCRIPT
+    assert event.form.value == "TRANSCRIPT"
+    assert len(repo.saved) == 1
+    assert repo.saved[0].filing_type == "TRANSCRIPT"
+
+
+@pytest.mark.asyncio
 async def test_intake_recovers_from_concurrent_duplicate_insert() -> None:
     """When a concurrent caller wins the insert race, we recover idempotently."""
     from sqlalchemy.exc import IntegrityError
@@ -189,6 +310,13 @@ async def test_intake_recovers_from_concurrent_duplicate_insert() -> None:
                 active=True,
                 added_at=datetime(2026, 1, 1, tzinfo=UTC),
             )
+
+        async def record_filing(
+            self, *, filing: NewFiling
+        ) -> FilingRecord | None:
+            # Concurrent-race path: the winner already inserted the filings
+            # row, so our ON CONFLICT DO NOTHING returns no row.
+            return None
 
     winner = UploadedDocumentRecord(
         id=1,

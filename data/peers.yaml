@@ -1,0 +1,14 @@
+# Curated peer mappings for the Phase 5b peer reader.
+# Bidirectional pairs unless noted otherwise.
+- ticker: MSFT
+  peer_ticker: GOOGL
+- ticker: GOOGL
+  peer_ticker: MSFT
+- ticker: AAPL
+  peer_ticker: MSFT
+- ticker: MSFT
+  peer_ticker: AAPL
+- ticker: JPM
+  peer_ticker: BAC
+- ticker: BAC
+  peer_ticker: JPM
