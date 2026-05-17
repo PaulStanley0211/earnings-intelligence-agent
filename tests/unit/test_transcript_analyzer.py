@@ -20,6 +20,8 @@ import pytest
 from app.agents.transcript_analyzer import (
     OWNER,
     _has_keyword_overlap,
+    _is_unaddressed_reason,
+    _persistable_verdicts,
     _reconcile_prefilter,
     _upload_id_from_accession,
     transcript_analyzer,
@@ -35,6 +37,7 @@ from app.memory.schemas import (
 from app.models.state import (
     AgentState,
     AnswerClass,
+    CommitmentStatusUpdate,
     FilingEvent,
     FilingEventSource,
     FilingForm,
@@ -375,10 +378,16 @@ async def test_transcript_analyzer_skips_reconcile_when_no_prior_open_commitment
 
 
 def test_reconcile_prefilter_keyword_overlap() -> None:
-    """A 5+ char token from commitment_text appearing in the transcript wins."""
+    """Two distinct non-stop content tokens shared with the transcript win.
+
+    The original heuristic accepted a single 5+ char token in common, which
+    let generic SaaS vocabulary ("Azure", "margin", "quarter") drag every
+    prior commitment through to the LLM. The tightened rule requires two
+    distinct non-stop content tokens to coincide.
+    """
     matched = _prior_commitment(
         commitment_id=1,
-        text="Azure margin expansion target",
+        text="Cirrus Analytics acquisition target",
         target=None,
     )
     unmatched = _prior_commitment(
@@ -386,9 +395,25 @@ def test_reconcile_prefilter_keyword_overlap() -> None:
         text="Foo bar baz quux",
         target=None,
     )
-    transcript = "Operator: We saw Azure growth and margin compression."
+    transcript = "Operator: Cirrus Analytics integration is on track this quarter."
     survivors = _reconcile_prefilter([matched, unmatched], transcript)
     assert [c.id for c in survivors] == [1]
+
+
+def test_reconcile_prefilter_rejects_single_generic_token_match() -> None:
+    """A single shared stop-listed token (e.g. ``margin``) is no longer enough.
+
+    Pre-tightening, this would have survived. Post-tightening, it must be
+    dropped so the LLM does not get asked to reconcile every commitment
+    that mentions a SaaS earnings-call cliche.
+    """
+    candidate = _prior_commitment(
+        commitment_id=11,
+        text="Operating margin will expand 100 basis points",
+        target=None,
+    )
+    transcript = "Margin held steady this quarter; we expect continued revenue growth."
+    assert _reconcile_prefilter([candidate], transcript) == []
 
 
 def test_reconcile_prefilter_period_overlap() -> None:
@@ -414,8 +439,89 @@ def test_reconcile_prefilter_drops_short_tokens() -> None:
     assert _reconcile_prefilter([candidate], transcript) == []
 
 
-def test_has_keyword_overlap_is_case_insensitive() -> None:
-    assert _has_keyword_overlap("Azure Margin", "the azure quarter")
+def test_has_keyword_overlap_requires_two_distinct_non_stop_tokens() -> None:
+    """Single-token matches are insufficient; two distinct non-stop tokens win."""
+    haystack = {"cirrus", "analytics", "console", "stratus"}
+    assert _has_keyword_overlap("Cirrus Analytics roadmap", haystack)
+    # Only one match (``cirrus``) -> below the two-distinct-token threshold.
+    assert not _has_keyword_overlap("Cirrus headline number", haystack)
+    # Match is case-insensitive.
+    assert _has_keyword_overlap("CIRRUS analytics summary", haystack)
+
+
+def test_persistable_verdicts_drops_canonical_unaddressed_reason() -> None:
+    """Verdicts whose reason is the canonical no-evidence string are filtered.
+
+    The reconcile prompt asks the LLM to emit the exact phrase ``transcript
+    does not address this commitment`` when the transcript provides no
+    evidence about a prior commitment. The agent then suppresses the DB
+    write so the commitment row stays at its current ``open`` status.
+    Variants with a trailing period and mixed case are normalised.
+    """
+    verdicts = [
+        CommitmentStatusUpdate(
+            commitment_id=1,
+            new_status=CommitmentStatus.MET,
+            reason="Cirrus closed on schedule",
+        ),
+        CommitmentStatusUpdate(
+            commitment_id=2,
+            new_status=CommitmentStatus.STILL_OPEN,
+            reason="transcript does not address this commitment",
+        ),
+        CommitmentStatusUpdate(
+            commitment_id=3,
+            new_status=CommitmentStatus.STILL_OPEN,
+            reason="Transcript does not address this commitment.",
+        ),
+        # MET / MISSED verdicts always persist regardless of reason wording.
+        CommitmentStatusUpdate(
+            commitment_id=4,
+            new_status=CommitmentStatus.MISSED,
+            reason="management explicitly stated the target was not achieved",
+        ),
+    ]
+    persistable = _persistable_verdicts(verdicts)
+    assert [v.commitment_id for v in persistable] == [1, 4]
+
+
+def test_persistable_verdicts_drops_still_open_with_specific_reason() -> None:
+    """Even non-canonical ``still_open`` verdicts are dropped from DB writes.
+
+    The reconciliation DB row stays at ``open`` whenever the LLM cannot
+    close the commitment. Persisting a ``still_open`` reconciliation row
+    would overwrite ``resolved_filing_accession`` / ``resolved_reason``
+    with a non-closure event and trip the "zero false closures" gate
+    against commitments the test corpus does not pin to a target.
+    """
+    verdicts = [
+        CommitmentStatusUpdate(
+            commitment_id=10,
+            new_status=CommitmentStatus.STILL_OPEN,
+            reason="management reaffirmed prior guidance but Q4 has not yet occurred",
+        ),
+        CommitmentStatusUpdate(
+            commitment_id=11,
+            new_status=CommitmentStatus.MET,
+            reason="Cirrus acquisition closed on schedule",
+        ),
+        CommitmentStatusUpdate(
+            commitment_id=12,
+            new_status=CommitmentStatus.MISSED,
+            reason="target was explicitly walked back",
+        ),
+    ]
+    persistable = _persistable_verdicts(verdicts)
+    assert [v.commitment_id for v in persistable] == [11, 12]
+
+
+def test_is_unaddressed_reason_normalises_case_and_punctuation() -> None:
+    """The reason check ignores case, surrounding whitespace, and trailing period."""
+    assert _is_unaddressed_reason("transcript does not address this commitment")
+    assert _is_unaddressed_reason("Transcript does not address this commitment.")
+    assert _is_unaddressed_reason("   transcript does not address this commitment   ")
+    assert not _is_unaddressed_reason("transcript addresses this commitment")
+    assert not _is_unaddressed_reason("Cirrus integration on track")
 
 
 def test_upload_id_from_accession_strips_prefix() -> None:

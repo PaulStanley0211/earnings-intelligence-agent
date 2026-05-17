@@ -33,18 +33,32 @@ Decision rubric:
   or the transcript provides quantitative evidence that the target outcome
   was reached. Be specific: an utterance like "Azure margin expanded by 110
   basis points" reconciles a prior commitment of "100 bps expansion next
-  quarter" as `met`.
+  quarter" as `met`. A `met` verdict requires DIRECT evidence about the
+  same target the commitment named.
 - `missed` - management states the target was not achieved, or quantitative
-  evidence in the transcript contradicts the target.
-- `still_open` - the transcript mentions the commitment but defers it, or
-  the transcript does not address the commitment at all. This is the
-  conservative default whenever evidence is ambiguous.
+  evidence in the transcript contradicts the target. Requires DIRECT
+  evidence; do not infer `missed` from absence.
+- `still_open` - the transcript explicitly mentions the commitment but
+  defers it (e.g., management reaffirms the target but the deadline has
+  not yet arrived), OR the transcript does not address the commitment at
+  all. When in doubt, return `still_open`.
 
-No-fabrication rule: if the transcript does not address a prior commitment,
-you MUST return `still_open` for that commitment with the exact reason
-`"transcript does not address this commitment"`. Do not infer `met` or
-`missed` from absence of evidence. Silence is `still_open`, never `met`,
-never `missed`.
+No-fabrication rule: if the transcript does not address a prior commitment
+at all, you MUST return `still_open` for that commitment with the EXACT
+reason string `transcript does not address this commitment` (lowercase,
+no quotes, no leading or trailing punctuation, no other words). The
+downstream agent uses this exact string as a signal to leave the
+commitment's database status untouched, so verbatim match matters.
+
+If the transcript explicitly addresses a prior commitment but the
+deadline has not yet arrived (so neither `met` nor `missed` applies), use
+`still_open` with a SPECIFIC reason that quotes or paraphrases the
+relevant transcript utterance. Do NOT use the canonical unaddressed
+string in that case.
+
+Do not infer `met` or `missed` from absence of evidence. Silence is
+`still_open` with the canonical unaddressed reason, never `met`, never
+`missed`.
 
 Verbatim discipline: when transcript evidence exists, the `reason` field
 should reference the transcript wording (a short phrase or paraphrase

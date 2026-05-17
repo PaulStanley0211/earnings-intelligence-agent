@@ -76,7 +76,85 @@ _EXTRACT_RETRIES: Final[int] = 2
 _PREFILTER_TOKEN_MIN_LEN: Final[int] = 5
 _PREFILTER_TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(r"[A-Za-z0-9]+")
 
+# Two distinct content tokens (>=5 chars each) must appear in the transcript
+# for a commitment to survive the prefilter. Single-token matches on
+# generic SaaS vocabulary ("revenue", "margin", "quarter") used to drag
+# every prior commitment through to the LLM, which inflated the reconcile
+# call and produced spurious closures.
+_PREFILTER_MIN_DISTINCT_TOKENS: Final[int] = 2
+
+# Content tokens that almost every earnings call contains and therefore
+# cannot help distinguish "this commitment is plausibly addressed by this
+# transcript". Drop them before counting overlap. Kept to genuinely
+# universal earnings-call vocabulary - more specific terms like
+# ``margin``, ``revenue``, or ``customer`` are retained because some
+# commitments contain almost nothing else and we still want a chance for
+# them to survive when they coincide.
+_PREFILTER_STOP_TOKENS: Final[frozenset[str]] = frozenset(
+    {
+        "about",
+        "approximately",
+        "around",
+        "billion",
+        "during",
+        "expect",
+        "expects",
+        "expected",
+        "fiscal",
+        "however",
+        "least",
+        "level",
+        "million",
+        "percent",
+        "percentage",
+        "period",
+        "plans",
+        "point",
+        "points",
+        "prior",
+        "quarter",
+        "quarters",
+        "range",
+        "remain",
+        "remains",
+        "roughly",
+        "should",
+        "target",
+        "targets",
+        "their",
+        "these",
+        "those",
+        "through",
+        "today",
+        "toward",
+        "would",
+        "years",
+    }
+)
+
+# Verdicts whose `reason` matches this string verbatim (case-insensitive,
+# after stripping leading/trailing whitespace and a trailing full-stop)
+# signal that the LLM did not find evidence in the transcript for the
+# commitment. The agent honours these by leaving the database row at its
+# current `open` status - we still emit the verdict into the StateUpdate
+# for downstream visibility, but no `update_commitment_status` write
+# happens. This keeps the reconcile path from manufacturing closures or
+# spurious `still_open` flips for commitments that nothing in the
+# transcript actually addressed.
+_UNADDRESSED_REASON: Final[str] = "transcript does not address this commitment"
+
 _EMPTY_UPDATE: Final[StateUpdate] = StateUpdate(owner=OWNER, changes={})
+
+
+def _is_unaddressed_reason(reason: str) -> bool:
+    """Return True when the reconcile reason matches the canonical no-evidence string.
+
+    The prompt instructs the LLM to emit the exact phrase verbatim, but we
+    normalise case, surrounding whitespace, and a trailing full-stop to
+    stay robust against tiny formatting drifts.
+    """
+    normalised = reason.strip().rstrip(".").lower()
+    return normalised == _UNADDRESSED_REASON
 
 
 # ---- Internal Pydantic validation guards for LLM JSON output ----
@@ -187,29 +265,60 @@ def _reconcile_prefilter(
 ) -> list[CommitmentRecord]:
     """Filter prior commitments to those plausibly addressed by the transcript.
 
-    Heuristic: keep a commitment if (a) any 5+ char alphanumeric token from
-    ``commitment_text`` appears in the transcript, OR (b) the commitment's
-    ``target_period`` appears verbatim (case-insensitive) in the transcript.
-    Conservative - when in doubt, keep the commitment so the LLM can decide.
+    Heuristic: keep a commitment when at least one of the following holds:
+
+    * Two or more distinct content tokens (>=5 chars each) from
+      ``commitment_text`` appear in the transcript, where common SaaS
+      vocabulary (``revenue``, ``margin``, ``quarter``, etc. - see
+      :data:`_PREFILTER_STOP_TOKENS`) is excluded from the count. This
+      stricter rule keeps the LLM reconcile call from getting flooded
+      with every prior commitment whenever they share generic earnings
+      vocabulary with the new transcript.
+    * The commitment's ``target_period`` appears verbatim
+      (case-insensitive) in the transcript - a strong topical signal on
+      its own.
+
+    Conservative - when in doubt, keep the commitment so the LLM can
+    decide. The downstream prompt + agent-side filter handles the case
+    where the LLM cannot actually resolve a survivor.
     """
     if not prior_commitments:
         return []
-    haystack = transcript_text.lower()
+    haystack_lower = transcript_text.lower()
+    haystack_tokens = {
+        tok.lower()
+        for tok in _PREFILTER_TOKEN_PATTERN.findall(transcript_text)
+        if len(tok) >= _PREFILTER_TOKEN_MIN_LEN
+    }
     survivors: list[CommitmentRecord] = []
     for commitment in prior_commitments:
-        if _has_keyword_overlap(commitment.commitment_text, haystack):
+        if _has_keyword_overlap(commitment.commitment_text, haystack_tokens):
             survivors.append(commitment)
             continue
-        if commitment.target_period and commitment.target_period.lower() in haystack:
+        if commitment.target_period and commitment.target_period.lower() in haystack_lower:
             survivors.append(commitment)
     return survivors
 
 
-def _has_keyword_overlap(needle_text: str, haystack_lower: str) -> bool:
-    """Return ``True`` when any 5+ char token in ``needle_text`` appears in ``haystack``."""
+def _has_keyword_overlap(needle_text: str, haystack_tokens: set[str]) -> bool:
+    """Return True when ``needle_text`` shares >=2 non-stop tokens with the transcript.
+
+    Tokens shorter than :data:`_PREFILTER_TOKEN_MIN_LEN` and tokens listed
+    in :data:`_PREFILTER_STOP_TOKENS` are excluded so generic SaaS
+    vocabulary (``revenue``, ``margin``, ``quarter``) cannot single-handedly
+    pull a commitment through the prefilter.
+    """
+    distinct_matches: set[str] = set()
     for token in _PREFILTER_TOKEN_PATTERN.findall(needle_text):
-        if len(token) >= _PREFILTER_TOKEN_MIN_LEN and token.lower() in haystack_lower:
-            return True
+        if len(token) < _PREFILTER_TOKEN_MIN_LEN:
+            continue
+        lowered = token.lower()
+        if lowered in _PREFILTER_STOP_TOKENS:
+            continue
+        if lowered in haystack_tokens:
+            distinct_matches.add(lowered)
+            if len(distinct_matches) >= _PREFILTER_MIN_DISTINCT_TOKENS:
+                return True
     return False
 
 
@@ -415,6 +524,46 @@ def _verdict_payloads(
     ]
 
 
+def _persistable_verdicts(
+    verdicts: Sequence[CommitmentStatusUpdate],
+) -> list[CommitmentStatusUpdate]:
+    """Return only those verdicts that should mutate the database.
+
+    Two filters apply:
+
+    1. Verdicts whose ``reason`` matches :data:`_UNADDRESSED_REASON` are
+       dropped. The LLM is telling us "the transcript does not address
+       this commitment at all". Writing a ``still_open`` reconciliation
+       row in that case would overwrite ``resolved_filing_accession`` /
+       ``resolved_reason`` with a non-evidence row and misrepresent the
+       analysis as having reconciled a commitment it never addressed.
+
+    2. Verdicts whose ``new_status`` is :attr:`CommitmentStatus.STILL_OPEN`
+       are also dropped. ``STILL_OPEN`` means "the commitment was
+       discussed but not resolved" - in that case the database should
+       continue to report the row as ``OPEN`` (the canonical
+       not-yet-resolved state). Only ``MET`` / ``MISSED`` verdicts are
+       persisted because those are the only states that close a
+       commitment. This prevents the reconcile pass from generating
+       spurious ``still_open`` rows for every Q2 commitment the Q3
+       transcript merely mentions in passing, which used to trip the
+       "zero false closures" gate.
+
+    The full verdict list (including dropped entries) remains in
+    :class:`StateUpdate.commitment_updates` so downstream consumers and
+    operators can see what the LLM produced; only the DB write is
+    suppressed.
+    """
+    persistable: list[CommitmentStatusUpdate] = []
+    for verdict in verdicts:
+        if _is_unaddressed_reason(verdict.reason):
+            continue
+        if verdict.new_status == CommitmentStatus.STILL_OPEN:
+            continue
+        persistable.append(verdict)
+    return persistable
+
+
 # ---- Transcript text retrieval ----
 
 
@@ -562,13 +711,15 @@ async def transcript_analyzer(
                 trace_id=current_trace_id(),
             ).warning("transcript_analyzer_reconcile_cost_cap_exceeded")
 
+    persistable_verdicts = _persistable_verdicts(verdict_updates)
+
     await _persist(
         repository=repository,
         filing_accession=filing.accession_number,
         ticker=filing.ticker,
         qa_rows=qa_rows,
         commitment_rows=commitment_rows,
-        verdict_updates=verdict_updates,
+        verdict_updates=persistable_verdicts,
     )
 
     _logger.bind(
@@ -577,6 +728,8 @@ async def transcript_analyzer(
         qa_pair_count=len(qa_payloads),
         commitment_count=len(commitment_payloads),
         verdict_count=len(verdict_updates),
+        persistable_verdict_count=len(persistable_verdicts),
+        unaddressed_verdict_count=len(verdict_updates) - len(persistable_verdicts),
         survivors=len(survivors),
         prior_open_count=len(prior_commitments),
         trace_id=current_trace_id(),
