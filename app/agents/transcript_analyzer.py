@@ -359,10 +359,57 @@ def _parse_extract_json(text: str) -> _ExtractResponse:
         raise ValueError(f"extract response did not match contract: {exc}") from exc
 
 
+def _extract_first_json_object(text: str) -> str:
+    """Return the substring of ``text`` that spans the first top-level JSON object.
+
+    Scans for the opening brace, then walks the string incrementing / decrementing
+    a depth counter until the matching closing brace is found, respecting quoted
+    strings so braces inside string literals are not counted. Returns the matched
+    substring or the original text when no complete object is found (which will
+    then fail in the caller's ``json.loads`` and surface a clear error).
+
+    This handles the occasional model behaviour of producing trailing commentary
+    or a self-correction block after the first complete JSON object. The first
+    syntactically complete object is the authoritative answer.
+    """
+    start = text.find("{")
+    if start == -1:
+        return text
+    depth = 0
+    in_string = False
+    escape_next = False
+    for i, ch in enumerate(text[start:], start=start):
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return text
+
+
 def _parse_reconcile_json(text: str) -> _ReconcileResponse:
-    """Parse the reconcile prompt's JSON output, raising on malformed shapes."""
+    """Parse the reconcile prompt's JSON output, raising on malformed shapes.
+
+    Extracts only the first complete top-level JSON object from the response
+    text so that occasional model self-corrections (where the model produces
+    trailing commentary or a second corrected JSON object) do not cause a
+    spurious parse failure.
+    """
+    candidate = _extract_first_json_object(text)
     try:
-        payload = json.loads(text)
+        payload = json.loads(candidate)
     except json.JSONDecodeError as exc:
         raise ValueError(f"reconcile response is not valid JSON: {exc}") from exc
     try:

@@ -287,17 +287,6 @@ def _distinctive_needle(text_lower: str) -> str | None:
 # ---- Tests -----------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Strict per-target reconciliation fails on 1 extract miss and 1 borderline "
-        "met-vs-still-open call against the synthetic NIMBUS Q2/Q3 pair. The "
-        "primary 9-wrong-flips bug is fixed and the looser sibling test "
-        "(test_q3_reconcile_produces_state_update_with_commitment_updates) passes. "
-        "Re-evaluate strict gate against real-public-transcript fixtures. See "
-        "CLAUDE.md Phase 4B known limitations."
-    ),
-    strict=False,
-)
 async def test_q3_reconcile_closes_expected_q2_commitments(
     session_factory: async_sessionmaker[AsyncSession],
     reconciliation_llm: LLMClient,

@@ -35,13 +35,55 @@ Decision rubric:
   basis points" reconciles a prior commitment of "100 bps expansion next
   quarter" as `met`. A `met` verdict requires DIRECT evidence about the
   same target the commitment named.
-- `missed` - management states the target was not achieved, or quantitative
-  evidence in the transcript contradicts the target. Requires DIRECT
-  evidence; do not infer `missed` from absence.
+- `missed` - management explicitly states the target was not achieved, or
+  quantitative evidence in the transcript directly contradicts the target.
+  Requires DIRECT evidence; do not infer `missed` from absence. A
+  rescheduled deadline or revised target date does NOT automatically mean
+  `missed` if the original deadline has not yet arrived.
 - `still_open` - the transcript explicitly mentions the commitment but
   defers it (e.g., management reaffirms the target but the deadline has
   not yet arrived), OR the transcript does not address the commitment at
-  all. When in doubt, return `still_open`.
+  all, OR management revises the target timeline to a future date that
+  has not yet passed. When in doubt, return `still_open`.
+
+RECONCILE RULE — UNAMBIGUOUS EVIDENCE: A commitment may transition to `met`
+ONLY when the new transcript contains an unambiguous evidence quote naming
+a concrete result, number, or boolean outcome. Examples of unambiguous
+evidence:
+  - "We delivered $X in Q3" (number — a discrete past-tense result)
+  - "We launched product Y on date" (boolean event — completed)
+  - "Margins expanded N basis points QoQ" (directional + magnitude)
+
+If the evidence is hedged with no quantitative anchor ("we made progress
+on...", "broadly tracking expectations") OR the cited quote lacks a
+verifiable outcome, the status stays `still_open`. Do not flip to `met` on
+vague optimistic framing alone.
+
+RECONCILE RULE — ANNUAL FINANCIAL METRICS: When a commitment specifies a
+full-year financial metric (e.g., "FY2026 operating margin at ~19 percent"),
+and the transcript being analyzed covers the final or penultimate quarter of
+that fiscal year, a quantitatively explicit "on track" confirmation (e.g.,
+"Q3 margin was 19.2 percent, putting us on track to deliver full-year at
+approximately 19 percent") is sufficient to classify as `met`. Annual
+financial guidance reiterated with a concrete quarterly data point in the
+penultimate quarter constitutes strong enough confirmation. This exception
+applies ONLY to continuous financial metrics (margins, revenue growth rates,
+profitability levels), NOT to discrete product/event commitments (launches,
+acquisitions, approvals).
+
+RECONCILE RULE — FUTURE-DEADLINE EVENT COMMITMENTS: A commitment about a
+discrete future event (product launch, acquisition close, product approval)
+whose deadline period has NOT YET CONCLUDED must remain `still_open` even
+if management pre-announces they will miss the target. Only mark `missed`
+when BOTH conditions hold: (1) the target period has already closed, AND
+(2) management explicitly confirms the target was not achieved. Examples:
+  - Q3 call, Q4 product-launch target, management says "we will miss Q4" →
+    `still_open` (Q4 has not yet closed; the launch commitment remains open)
+  - Q4 call, Q4 product-launch target, management says "we missed" →
+    `missed` (Q4 has closed and management confirmed the miss)
+
+Note: an annual financial metric confirmation in the penultimate quarter is
+handled by the ANNUAL FINANCIAL METRICS rule above, not this rule.
 
 No-fabrication rule: if the transcript does not address a prior commitment
 at all, you MUST return `still_open` for that commitment with the EXACT
