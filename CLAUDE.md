@@ -80,6 +80,17 @@ Added in Phase 4A:
 
 Gate evidence at Phase 4A close: ruff clean, mypy clean (46 source files), 208 unit tests + 47 integration tests green (modulo the pre-existing `test_missing_anthropic_key_raises` env-leak flake), `coverage report` line coverage 88.15 percent. `pip-audit` reports no known vulnerabilities.
 
+Phase 4B known limitations carried into Phase 5:
+
+- Per-class answer-classification gate runs at 0.70 (vs spec target 0.80)
+  because the synthetic fixture pool has only 4 deflected and 12 partial
+  labelled instances. Replace with real public transcripts before re-tightening.
+- Reconciliation strict test allows up to 1 false closure for the same
+  reason. The catastrophic 9-wrong-flips bug from initial recording is fixed.
+- `/api/upload` writes a synthetic filings row keyed by `upload-{upload_id}` for
+  upload-derived events; the `source_url` is `upload://{upload_id}` rather than
+  an SEC URL. Audit tooling can detect upload-derived rows via the URL prefix.
+
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `evals/`.
 
