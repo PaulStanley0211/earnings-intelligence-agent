@@ -537,3 +537,34 @@ class Commitment(Base):
         ),
         Index("ix_commitments_ticker_status", "ticker", "status"),
     )
+
+
+class Note(Base):
+    """An accepted synthesized note for one filing.
+
+    Append-only. One row per filing_accession; re-runs return the existing
+    row via ON CONFLICT DO NOTHING. Per-event cost/latency are deliberately
+    not stored here -- a per-event metrics table is deferred to Phase 7.
+    """
+
+    __tablename__ = "notes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    filing_accession: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("filings.accession_number", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    ticker: Mapped[str] = mapped_column(String(16), nullable=False)
+    markdown_body: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_template_name: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_template_sha: Mapped[str] = mapped_column(CHAR(64), nullable=False)
+    critic_attempts: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index("ix_notes_ticker_created", "ticker", "created_at"),
+    )

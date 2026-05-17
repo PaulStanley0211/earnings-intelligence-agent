@@ -430,3 +430,34 @@ class CommitmentRecord(BaseModel):
     resolved_reason: str | None
     created_at: datetime
     updated_at: datetime
+
+
+# ---- Phase 5A: persisted synthesized notes ----
+
+
+class NoteCreate(BaseModel):
+    """Pre-persistence note payload."""
+
+    model_config = ConfigDict(frozen=True)
+
+    filing_accession: str
+    ticker: str
+    markdown_body: str
+    prompt_template_name: str
+    prompt_template_sha: str = Field(..., min_length=64, max_length=64)
+    critic_attempts: int = Field(..., ge=1)
+
+
+class NoteRead(BaseModel):
+    """Read-side note projection."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    filing_accession: str
+    ticker: str
+    markdown_body: str
+    prompt_template_name: str
+    prompt_template_sha: str
+    critic_attempts: int
+    created_at: datetime
