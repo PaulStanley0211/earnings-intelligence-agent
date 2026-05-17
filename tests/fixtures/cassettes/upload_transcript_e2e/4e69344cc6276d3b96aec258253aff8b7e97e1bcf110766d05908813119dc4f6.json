@@ -1,0 +1,8 @@
+{
+  "cost_usd": 0.10460999999999998,
+  "input_tokens": 4539,
+  "model": "claude-opus-4-7",
+  "output_tokens": 487,
+  "prompt_version": "synthesizer/full_v1@v1#60421649",
+  "text": "## Headline\n\nNimbus management used its earnings call to reiterate full-year fiscal 2026 revenue guidance, raise the operating-margin outlook, and detail integration plans for the pending Cirrus Analytics acquisition.\n\n## Q&A signals\n\n- Asked about Cirrus integration timing, Daniel Cho said native Cirrus query capabilities would be \"generally available inside the Stratus console by the end of fiscal Q4 2026\" [Q1].\n- On margin drivers, Helena Vargas attributed \"about 60 basis points to the hiring slowdown\" and the balance to Stratus gross-margin improvement [Q2].\n- On hyperscaler competition, Cho said win rates \"remained above 75 percent in Q2 in competitive deals we tracked\" [Q7].\n\n## Commitments\n\n- Management reiterated full-year fiscal 2026 revenue guidance in the range of \"2.55 to 2.60 billion dollars\" [K2].\n- Non-GAAP operating margin guidance was raised to \"approximately 19 percent, up from our prior guidance of 18 percent\" [K3], with management also expecting \"positive GAAP operating income for the full fiscal year 2026\" [K4].\n- Nimbus expects to \"close the previously announced Cirrus Analytics acquisition by the end of fiscal Q3 2026\" [K1], with Stratus Copilot targeted for general availability by end of fiscal Q4 2026 [K7]."
+}

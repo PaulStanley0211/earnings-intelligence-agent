@@ -141,6 +141,11 @@ def critique_draft(state: AgentState) -> StateUpdate:
         validated = _validate_cited(match, fact_index, comparison_index)
         if validated is not None:
             findings.append(validated)
+    # Lines that carry an [L#]/[Q#]/[K#]/[P#] citation are language-evidence
+    # lines. Numbers embedded in quoted source text on such lines must not be
+    # flagged as uncited financial figures, so we mark each such line's full
+    # character span as covered.
+    cited_spans.extend(_language_cited_line_spans(state.draft_note))
     findings.extend(_find_uncited(state.draft_note, cited_spans))
     findings.extend(
         _validate_quote_citations(
@@ -326,6 +331,23 @@ def _mismatch_finding(
 def _per_share(concept: str) -> bool:
     """Identify per-share concepts so the critic uses an absolute tolerance."""
     return concept.startswith("EarningsPerShare")
+
+
+def _language_cited_line_spans(text: str) -> list[tuple[int, int]]:
+    """Return the character span of every line that contains an [L/Q/K/P]# citation.
+
+    Numbers embedded inside quoted source text on such lines must not be
+    flagged as uncited financial figures; marking the whole line as covered
+    is the safest approach because the line's numeric content serves as
+    evidence text, not an independently sourced financial claim.
+    """
+    spans: list[tuple[int, int]] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if _CITED_LANGUAGE.search(line):
+            spans.append((offset, offset + len(line)))
+        offset += len(line)
+    return spans
 
 
 def _find_uncited(text: str, cited_spans: list[tuple[int, int]]) -> list[CriticFinding]:

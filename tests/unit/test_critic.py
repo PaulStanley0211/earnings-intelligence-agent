@@ -485,3 +485,36 @@ def test_language_match_rejects_wrong_quoted_substring() -> None:
     indexed = "We anticipate solid margin expansion."
 
     assert _language_match(quoted_line, indexed) is False
+
+
+def test_numbers_in_language_cited_lines_are_not_flagged_as_uncited() -> None:
+    """Numbers inside a [K#]-cited quote must not be flagged as uncited figures.
+
+    The synthesizer quotes commitment source text verbatim, e.g.
+    '"revenue guidance of 2.55 to 2.60 billion dollars" [K2]'.
+    Those numbers are numeric evidence, not independent financial claims;
+    ``_language_cited_line_spans`` marks the whole line as covered so
+    ``_find_uncited`` does not raise an error on them.
+    """
+    from app.models.state import CommitmentExtracted
+
+    commitment = CommitmentExtracted(
+        commitment_text="Revenue guidance of 2.55 to 2.60 billion.",
+        target_period="FY2026",
+        source_quote=(
+            "reiterating our previously communicated full-year fiscal 2026 "
+            "revenue guidance of 2.55 to 2.60 billion dollars"
+        ),
+    )
+    draft = (
+        "## Commitments\n"
+        '- Management said "reiterating our previously communicated full-year '
+        "fiscal 2026 revenue guidance of 2.55 to 2.60 billion dollars\" [K1].\n"
+    )
+    state = _transcript_state(draft=draft, commitments=[commitment])
+    update = critique_draft(state)
+    findings = update.changes["critic_findings"]
+    # The 2.55 / 2.60 billion values must not be flagged as uncited numbers.
+    assert not any("2.60" in f.message or "2.55" in f.message for f in findings), (
+        f"Numbers inside a [K#]-cited line must not be flagged; got: {findings}"
+    )

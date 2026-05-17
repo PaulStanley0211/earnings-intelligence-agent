@@ -254,20 +254,6 @@ async def replay_client() -> AsyncIterator[AsyncClient]:
     app.dependency_overrides.clear()
 
 
-@pytest.mark.xfail(
-    reason=(
-        "The end-to-end pipeline reaches the synthesizer and produces a "
-        "citation-rich draft, but the synthesizer's editorial framing of "
-        "quoted phrases ('Analyst Name said \"...\" [Q1]') exceeds the "
-        "critic's 90% character-similarity check against the QA source_text. "
-        "Critic loops to loop_exceeded. Fix requires either tightening the "
-        "synthesizer's full_v1 prompt to forbid editorial framing on quoted "
-        "lines OR relaxing the critic's quote-matching to score only the "
-        "substring between quotation marks. See CLAUDE.md Phase 4B known "
-        "limitations."
-    ),
-    strict=False,
-)
 async def test_upload_transcript_runs_pipeline_to_final_note(
     seed_watchlist_nimbus: None,
     replay_client: AsyncClient,
