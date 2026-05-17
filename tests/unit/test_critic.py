@@ -457,3 +457,31 @@ def test_critic_resolves_known_p_citation() -> None:
     findings = update.changes["critic_findings"]
     # No error finding referencing P0 should remain.
     assert all(f.severity != "error" or "P0" not in f.message for f in findings)
+
+
+def test_language_match_uses_quoted_substring_when_line_has_quotes() -> None:
+    """Editorial framing around a quoted phrase must not fail the match."""
+    from app.agents.critic import _language_match
+
+    quoted_line = 'Sarah Lee asked "what is the cloud margin outlook for Q3"'
+    indexed = "What is the cloud margin outlook for Q3? Is it on the high end?"
+
+    assert _language_match(quoted_line, indexed) is True
+
+
+def test_language_match_falls_back_to_full_line_without_quotes() -> None:
+    from app.agents.critic import _language_match
+
+    line = "cloud margin outlook for Q3"
+    indexed = "What is the cloud margin outlook for Q3? Is it on the high end?"
+
+    assert _language_match(line, indexed) is True
+
+
+def test_language_match_rejects_wrong_quoted_substring() -> None:
+    from app.agents.critic import _language_match
+
+    quoted_line = 'Analyst said "earnings will collapse to zero"'
+    indexed = "We anticipate solid margin expansion."
+
+    assert _language_match(quoted_line, indexed) is False

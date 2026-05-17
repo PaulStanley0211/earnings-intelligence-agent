@@ -79,6 +79,8 @@ _CITED_LANGUAGE: Final[re.Pattern[str]] = re.compile(
     re.IGNORECASE,
 )
 
+_QUOTE_RX: Final[re.Pattern[str]] = re.compile(r'"([^"]+)"')
+
 _SCALE_FACTOR: Final[dict[str, Decimal]] = {
     "billion": Decimal("1000000000"),
     "bn": Decimal("1000000000"),
@@ -478,12 +480,20 @@ def _strip_citation_from_line(line: str, span: tuple[int, int]) -> str:
 
 
 def _language_match(quoted: str, indexed_text: str) -> bool:
-    """Return True when ``quoted`` is a substring or has >=90% char similarity."""
+    """Return True when ``quoted`` is a substring or has >=90% char similarity.
+
+    When ``quoted`` contains a ``"..."``-delimited substring, score only the
+    first quoted substring; this avoids penalising editorial framing
+    around a quoted line (``'Sarah Lee asked "..."'``). Lines without quotes
+    score on the full line.
+    """
     from difflib import SequenceMatcher
 
     if not quoted:
         return False
-    q = _normalise(quoted)
+    q_match = _QUOTE_RX.search(quoted)
+    candidate = q_match.group(1) if q_match else quoted
+    q = _normalise(candidate)
     t = _normalise(indexed_text)
     if not q or not t:
         return False
