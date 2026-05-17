@@ -194,6 +194,9 @@ class AgentState(BaseModel):
     critic_attempts: int = 0
     final_note: str | None = None
 
+    # ---- Phase 5a: notes persistence ----
+    persisted_note_id: int | None = None
+
 
 # Lookup of which node is allowed to mutate which AgentState field.
 # Mutating any other field via :class:`StateUpdate` is a validation error.
@@ -211,6 +214,7 @@ _FIELD_OWNERS: dict[str, frozenset[str]] = {
         {"qa_pairs", "commitments", "commitment_updates", "cost_usd"}
     ),
     "peer_reader": frozenset({"peer_context", "cost_usd"}),
+    "note_writer": frozenset({"persisted_note_id", "cost_usd"}),
     "synthesizer": frozenset({"draft_note", "cost_usd"}),
     "critic": frozenset(
         {"critic_findings", "critic_verdict", "critic_attempts", "final_note", "cost_usd"}

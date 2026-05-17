@@ -261,3 +261,16 @@ def test_phase4b_payloads_are_frozen() -> None:
         commitment.target_period = "x"  # type: ignore[misc]
     with pytest.raises(ValidationError):
         status_update.commitment_id = 99  # type: ignore[misc]
+
+
+# ---- Phase 5a: note_writer state field ----
+
+
+def test_note_writer_owns_persisted_note_id() -> None:
+    update = StateUpdate(owner="note_writer", changes={"persisted_note_id": 42})
+    assert update.changes == {"persisted_note_id": 42}
+
+
+def test_critic_cannot_set_persisted_note_id() -> None:
+    with pytest.raises(ValidationError, match="cannot mutate fields"):
+        StateUpdate(owner="critic", changes={"persisted_note_id": 1})
