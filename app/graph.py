@@ -1,13 +1,14 @@
 """LangGraph orchestrator.
 
-Phase 4B widens the parallel block to three specialists::
+Phase 5a extends the topology to include a terminal ``note_writer`` node::
 
     START
       -> financial_extractor*
       -> [comparator*, language_differ*, transcript_analyzer*]   (parallel)
       -> synthesizer                                              (waits for all)
       -> critic
-      -> (accepted | loop_exceeded -> END, rejected -> synthesizer)
+      -> (rejected -> synthesizer, accepted -> note_writer -> END,
+          loop_exceeded -> END)
 
 ``*`` means each node self-skips on inapplicable filing types and yields an
 empty :class:`~app.models.state.StateUpdate`: ``financial_extractor``,
@@ -59,6 +60,8 @@ from app.agents.financial_extractor import OWNER as FINANCIAL_EXTRACTOR_OWNER
 from app.agents.financial_extractor import extract_financials
 from app.agents.language_differ import OWNER as LANGUAGE_DIFFER_OWNER
 from app.agents.language_differ import diff_language
+from app.agents.note_writer import OWNER as NOTE_WRITER_OWNER
+from app.agents.note_writer import write_note
 from app.agents.synthesizer import OWNER as SYNTHESIZER_OWNER
 from app.agents.synthesizer import synthesize_note
 from app.agents.transcript_analyzer import OWNER as TRANSCRIPT_ANALYZER_OWNER
@@ -239,11 +242,45 @@ def _make_critic_node() -> NodeFn:
     return node
 
 
+def _make_note_writer_node(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+    prompt_template_name: str,
+    prompt_template_sha: str,
+) -> NodeFn:
+    """Return the LangGraph node closure for note_writer.
+
+    Persists the accepted synthesized note into the ``notes`` table. Runs
+    only when the critic returned ACCEPTED; on LOOP_EXCEEDED the underlying
+    :func:`~app.agents.note_writer.write_note` function is a no-op and
+    ``persisted_note_id`` stays ``None``.
+    """
+
+    async def node(state: AgentState) -> dict[str, Any]:
+        async with session_factory() as session:
+            try:
+                update = await write_note(
+                    state,
+                    repository=Repository(session),
+                    prompt_template_name=prompt_template_name,
+                    prompt_template_sha=prompt_template_sha,
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+        return update.changes
+
+    return node
+
+
 def _critic_router(state: AgentState) -> str:
-    """Decide whether to retry the synthesiser or end the run."""
+    """Decide whether to retry the synthesiser, persist, or end the run."""
     if state.critic_verdict is CriticVerdict.REJECTED:
         return SYNTHESIZER_OWNER
-    return END
+    if state.critic_verdict is CriticVerdict.ACCEPTED:
+        return NOTE_WRITER_OWNER
+    return END  # LOOP_EXCEEDED
 
 
 def build_graph(
@@ -254,18 +291,20 @@ def build_graph(
     llm: LLMClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compile the Phase 4B graph with three parallel specialist branches.
+    """Compile the Phase 5a graph with three parallel specialist branches.
 
     Topology::
 
         START -> financial_extractor ->
             [comparator, language_differ, transcript_analyzer] ->
-            synthesizer -> critic -> {synthesizer | END}
+            synthesizer -> critic -> {synthesizer | note_writer -> END | END}
 
     The synthesiser/critic loop is bounded by
     :data:`~app.agents.critic._MAX_CRITIC_ATTEMPTS`; when the budget is
     spent the critic emits a ``LOOP_EXCEEDED`` verdict and the router
-    routes to ``END`` so the note is held for manual review.
+    routes directly to ``END`` so the note is held for manual review.
+    When the critic accepts, the router sends the run to ``note_writer``
+    which persists the final note and then proceeds to ``END``.
 
     LangGraph's built-in fan-in fires ``synthesizer`` exactly once after
     ``comparator``, ``language_differ``, and ``transcript_analyzer`` all
@@ -278,6 +317,10 @@ def build_graph(
     the parallel block is safe for both EDGAR-filed and user-uploaded
     sources.
     """
+    from app.llm.prompts import load_prompt
+
+    synth_template = load_prompt("synthesizer/full_v1")
+
     builder: StateGraph[AgentState, Any, AgentState, AgentState] = StateGraph(AgentState)
     builder.add_node(  # type: ignore[call-overload]
         FINANCIAL_EXTRACTOR_OWNER,
@@ -309,6 +352,15 @@ def build_graph(
         CRITIC_OWNER,
         _make_critic_node(),
     )
+    # Phase 5a: note_writer runs after the critic accepts.
+    builder.add_node(  # type: ignore[call-overload]
+        NOTE_WRITER_OWNER,
+        _make_note_writer_node(
+            session_factory=session_factory,
+            prompt_template_name="synthesizer/full_v1",
+            prompt_template_sha=synth_template.body_sha,
+        ),
+    )
     builder.add_edge(START, FINANCIAL_EXTRACTOR_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, COMPARATOR_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, LANGUAGE_DIFFER_OWNER)
@@ -320,6 +372,11 @@ def build_graph(
     builder.add_conditional_edges(
         CRITIC_OWNER,
         _critic_router,
-        {SYNTHESIZER_OWNER: SYNTHESIZER_OWNER, END: END},
+        {
+            SYNTHESIZER_OWNER: SYNTHESIZER_OWNER,
+            NOTE_WRITER_OWNER: NOTE_WRITER_OWNER,
+            END: END,
+        },
     )
+    builder.add_edge(NOTE_WRITER_OWNER, END)
     return builder.compile()
