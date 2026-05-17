@@ -20,6 +20,8 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError
 
 from app.memory.schemas import (
+    FilingRecord,
+    NewFiling,
     NewUploadedDocument,
     UploadedDocumentRecord,
     WatchlistRecord,
@@ -42,6 +44,8 @@ class _SupportsUploadStorage(Protocol):
     async def get_watchlist_entry_by_ticker(
         self, ticker: str
     ) -> WatchlistRecord | None: ...
+
+    async def record_filing(self, *, filing: NewFiling) -> FilingRecord | None: ...
 
 
 def _filing_form(filing_type: str) -> FilingForm:
@@ -129,13 +133,43 @@ async def intake_upload(
             _reject_if_rebind(winner, ticker_upper, form.value)
             upload_id = winner.upload_id
 
+    accession_number = f"upload-{upload_id}"
+    filed_at = datetime.now(UTC)
+    source_url = f"upload://{upload_id}"
+
+    # Mirror the upload onto the ``filings`` table. Downstream agents
+    # (transcript_analyzer, comparator, language_differ) persist rows
+    # whose ``filing_accession`` columns FK to ``filings.accession_number``;
+    # without a matching parent row those inserts hit a FK violation. The
+    # repository method is idempotent on ``accession_number``
+    # (ON CONFLICT DO NOTHING), so a retry or a duplicate-content path
+    # that reuses an existing ``upload_id`` is safe.
+    await repository.record_filing(
+        filing=NewFiling(
+            accession_number=accession_number,
+            cik=entry.cik,
+            ticker=ticker_upper,
+            form=form,
+            filed_at=filed_at,
+            # No SEC URL exists for user uploads. Reuse the ``upload://``
+            # scheme so audit tooling can distinguish upload-derived rows
+            # from watcher-derived rows by source_url prefix alone.
+            source_url=source_url,
+            # Unknown for user uploads: a transcript/PDF carries no
+            # canonical "report period end". The financial-extractor and
+            # comparator infer the period from XBRL or the transcript
+            # itself, not from this column.
+            report_period_end=None,
+        )
+    )
+
     event = FilingEvent(
-        accession_number=f"upload-{upload_id}",
+        accession_number=accession_number,
         cik=entry.cik,
         ticker=ticker_upper,
         form=form,
-        filed_at=datetime.now(UTC),
-        source_url=f"upload://{upload_id}",
+        filed_at=filed_at,
+        source_url=source_url,
         source=FilingEventSource.UPLOAD,
     )
     # Belt-and-suspenders: upstream Task 6 defaults source to WATCHER, so
