@@ -12,8 +12,12 @@ the live :class:`~app.memory.repository.Repository`, so the cap survives
 restarts and is shared across processes.
 
 Phase 3 extends the prompt to include ``[L#]`` language-change citations
-from the differ. Future phases swap the version string and add A/B
-comparisons via ``evals/compare.py`` without changing this node.
+from the differ. Phase 5B adds peer-context support: when
+:attr:`AgentState.peer_context` is non-empty the node switches to the
+``full_with_peers_v1`` prompt which includes a ``<source name="peers">``
+block and the ``[P#]`` citation namespace. Future phases swap the version
+string and add A/B comparisons via ``evals/compare.py`` without changing
+this node.
 """
 
 from __future__ import annotations
@@ -25,11 +29,13 @@ from app.agents.citations import (
     ComparisonCitation,
     FactCitation,
     LanguageCitation,
+    PeerCitation,
     QACitation,
     build_commitment_citations,
     build_comparison_citations,
     build_fact_citations,
     build_language_citations,
+    build_peer_citations,
     build_qa_citations,
 )
 from app.llm.client import LLMClient, _SupportsDailySpend
@@ -44,6 +50,7 @@ OWNER = "synthesizer"
 _PROMPT_NUMBERS_ONLY = "synthesizer/numbers_v1"
 _PROMPT_WITH_LANGUAGE = "synthesizer/numbers_with_language_v1"
 _PROMPT_FULL = "synthesizer/full_v1"
+_PROMPT_FULL_WITH_PEERS = "synthesizer/full_with_peers_v1"
 _MAX_TOKENS = 1024
 
 
@@ -68,6 +75,7 @@ async def synthesize_note(
     language_citations = build_language_citations(state.language_diffs)
     qa_citations = build_qa_citations(state.qa_pairs)
     commitment_citations = build_commitment_citations(state.commitments)
+    peer_citations = build_peer_citations(state.peer_context)
     facts_block = _render_facts_block(fact_citations)
     comparisons_block = _render_comparisons_block(comparison_citations)
     language_block = _render_language_block(language_citations)
@@ -86,11 +94,13 @@ async def synthesize_note(
         "language_block": language_block,
         "critic_feedback": critic_feedback,
     }
-    if prompt_name == _PROMPT_FULL:
+    if prompt_name in (_PROMPT_FULL, _PROMPT_FULL_WITH_PEERS):
         substitutions["qa_pairs_block"] = _render_qa_pairs_block(qa_citations)
         substitutions["commitments_block"] = _render_commitments_block(
             commitment_citations
         )
+    if prompt_name == _PROMPT_FULL_WITH_PEERS:
+        substitutions["peers_block"] = _render_peers_block(peer_citations)
 
     user_content = template.render(**substitutions)
 
@@ -112,6 +122,7 @@ async def synthesize_note(
         language_citations=len(language_citations),
         qa_citations=len(qa_citations),
         commitment_citations=len(commitment_citations),
+        peer_citations=len(peer_citations),
         cost_usd=response.cost_usd,
         prompt_version=response.prompt_version,
         trace_id=current_trace_id(),
@@ -129,11 +140,17 @@ async def synthesize_note(
 def _select_prompt(state: AgentState) -> str:
     """Pick the synthesiser prompt for the data available on ``state``.
 
-    Priority: transcript data wins over language-only, which wins over the
-    numbers-only base. The selector is intentionally a small ladder; a
-    fourth arm should be promoted to a registry rather than another
-    elif branch.
+    Priority (highest to lowest):
+    1. Peer context present -> full_with_peers_v1 (superset of full_v1).
+    2. Transcript data (Q&A or commitments) present -> full_v1.
+    3. Language diffs only -> numbers_with_language_v1.
+    4. Numbers only -> numbers_v1.
+
+    The selector is intentionally a small ladder; a fifth arm should be
+    promoted to a registry rather than another elif branch.
     """
+    if state.peer_context:
+        return _PROMPT_FULL_WITH_PEERS
     if state.qa_pairs or state.commitments:
         return _PROMPT_FULL
     if state.language_diffs:
@@ -166,6 +183,20 @@ def _render_commitments_block(citations: list[CommitmentCitation]) -> str:
             f'(source: "{c.source_quote}")'
         )
     return "\n".join(lines)
+
+
+def _render_peers_block(citations: list[PeerCitation]) -> str:
+    """Render peer-context citations as a newline-joined block.
+
+    Each line uses the format ``[P{i}] ({peer_ticker}, {kind}) {text}`` so
+    the critic can resolve ``[P#]`` references back to the originating entry.
+    Empty input returns a placeholder that suppresses the peer paragraph.
+    """
+    if not citations:
+        return "(no peer context available)"
+    return "\n".join(
+        f"[{c.identifier}] ({c.peer_ticker}, {c.kind}) {c.text}" for c in citations
+    )
 
 
 def _render_facts_block(citations: list[FactCitation]) -> str:
