@@ -14,7 +14,7 @@ which rolls back any uncommitted state.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import desc, func, select, update
@@ -32,6 +32,7 @@ from app.memory.models import (
     FinancialFact,
     LanguageDiff,
     Note,
+    Peer,
     QAPair,
     UploadedDocument,
     WatchlistEntry,
@@ -58,6 +59,10 @@ from app.memory.schemas import (
     NewUploadedDocument,
     NoteCreate,
     NoteRead,
+    PeerCommitmentSignal,
+    PeerCreate,
+    PeerLanguageDiffSignal,
+    PeerSignals,
     PollLogRecord,
     PollStatus,
     QAPairRecord,
@@ -828,3 +833,121 @@ class Repository:
             critic_attempts=row.critic_attempts,
             created_at=row.created_at,
         )
+
+    # ---- peers ----
+
+    async def upsert_peer(self, peer: PeerCreate) -> None:
+        """Idempotent peer insert; no-op on duplicate ``(ticker, peer_ticker)``."""
+        stmt = (
+            pg_insert(Peer)
+            .values(
+                ticker=peer.ticker,
+                peer_ticker=peer.peer_ticker,
+                source=peer.source,
+            )
+            .on_conflict_do_nothing(index_elements=[Peer.ticker, Peer.peer_ticker])
+        )
+        await self._session.execute(stmt)
+
+    async def list_peers(self, *, ticker: str) -> list[str]:
+        """Return peer tickers for ``ticker``, sorted alphabetically."""
+        stmt = (
+            select(Peer.peer_ticker)
+            .where(Peer.ticker == ticker)
+            .order_by(Peer.peer_ticker)
+        )
+        result = await self._session.execute(stmt)
+        return [str(r) for r in result.scalars().all()]
+
+    async def get_recent_peer_signals(
+        self,
+        *,
+        peer_ticker: str,
+        max_age_days: int = 180,
+    ) -> PeerSignals:
+        """Return the peer's most-recent language diffs and open commitments.
+
+        ``language_diffs``: from the peer's most recent processed 10-K or
+        10-Q within ``max_age_days``, filtered to ``severity='major'``.
+        ``commitments``: from the peer's most recent processed TRANSCRIPT
+        within ``max_age_days``, filtered to ``status='open'``.
+        Returns an empty :class:`PeerSignals` for cold-start or stale peers.
+        """
+        cutoff = datetime.now(UTC) - timedelta(days=max_age_days)
+
+        language_filing_result = await self._session.execute(
+            select(Filing.accession_number)
+            .where(
+                Filing.ticker == peer_ticker,
+                Filing.form.in_(("10-K", "10-Q")),
+                Filing.filed_at >= cutoff,
+                Filing.status == "processed",
+            )
+            .order_by(desc(Filing.filed_at))
+            .limit(1)
+        )
+        accession = language_filing_result.scalar_one_or_none()
+
+        language_diffs: list[PeerLanguageDiffSignal] = []
+        if accession is not None:
+            diff_rows = await self._session.execute(
+                select(LanguageDiff)
+                .where(
+                    LanguageDiff.filing_accession == accession,
+                    LanguageDiff.severity == "major",
+                )
+            )
+            for row in diff_rows.scalars().all():
+                text_body = await self._language_diff_text(row)
+                language_diffs.append(
+                    PeerLanguageDiffSignal(
+                        text=text_body,
+                        severity=row.severity,
+                        source_filing_accession=accession,
+                    )
+                )
+
+        transcript_filing_result = await self._session.execute(
+            select(Filing.accession_number)
+            .where(
+                Filing.ticker == peer_ticker,
+                Filing.form == "TRANSCRIPT",
+                Filing.filed_at >= cutoff,
+                Filing.status == "processed",
+            )
+            .order_by(desc(Filing.filed_at))
+            .limit(1)
+        )
+        t_accession = transcript_filing_result.scalar_one_or_none()
+
+        commitments: list[PeerCommitmentSignal] = []
+        if t_accession is not None:
+            commitment_rows = await self._session.execute(
+                select(Commitment)
+                .where(
+                    Commitment.filing_accession == t_accession,
+                    Commitment.status == "open",
+                )
+            )
+            for c in commitment_rows.scalars().all():
+                commitments.append(
+                    PeerCommitmentSignal(
+                        text=c.commitment_text,
+                        source_filing_accession=t_accession,
+                    )
+                )
+
+        return PeerSignals(language_diffs=language_diffs, commitments=commitments)
+
+    async def _language_diff_text(self, row: LanguageDiff) -> str:
+        """Fetch the current-section text for a language diff row.
+
+        Returns an empty string when ``current_section_id`` is ``None`` or
+        the referenced section has been deleted.
+        """
+        if row.current_section_id is None:
+            return ""
+        sec = await self._session.execute(
+            select(FilingSection.text).where(FilingSection.id == row.current_section_id)
+        )
+        return str(sec.scalar_one_or_none() or "")
