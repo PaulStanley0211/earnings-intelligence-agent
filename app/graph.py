@@ -1,11 +1,11 @@
 """LangGraph orchestrator.
 
-Phase 5a extends the topology to include a terminal ``note_writer`` node::
+Phase 5b extends the topology to add ``peer_reader`` to the parallel fan-out::
 
     START
       -> financial_extractor*
-      -> [comparator*, language_differ*, transcript_analyzer*]   (parallel)
-      -> synthesizer                                              (waits for all)
+      -> [comparator*, language_differ*, transcript_analyzer*, peer_reader]  (parallel)
+      -> synthesizer                                                          (waits for all)
       -> critic
       -> (rejected -> synthesizer, accepted -> note_writer -> END,
           loop_exceeded -> END)
@@ -13,9 +13,11 @@ Phase 5a extends the topology to include a terminal ``note_writer`` node::
 ``*`` means each node self-skips on inapplicable filing types and yields an
 empty :class:`~app.models.state.StateUpdate`: ``financial_extractor``,
 ``comparator``, and ``language_differ`` skip on ``TRANSCRIPT``;
-``transcript_analyzer`` skips on every non-``TRANSCRIPT`` form. The parallel
-block is therefore safe regardless of upload type because every node either
-contributes its owned fields or yields an empty update.
+``transcript_analyzer`` skips on every non-``TRANSCRIPT`` form.
+``peer_reader`` runs on every filing type but degrades to an empty context
+when no peers row exists. The parallel block is therefore safe regardless of
+upload type because every node either contributes its owned fields or yields
+an empty update.
 
 Each node is a pure function of :class:`AgentState`. The session lifecycle
 is owned by the node closure: one session per invocation, committed on
@@ -23,13 +25,13 @@ success and rolled back on any raised exception so concurrent runs cannot
 contaminate each other's transactions.
 
 LangGraph fans out from ``financial_extractor`` to ``comparator``,
-``language_differ``, and ``transcript_analyzer`` automatically because each
-receives an edge from it. The ``synthesizer`` receives an edge from every
-specialist; LangGraph fires it once after all upstreams have delivered
-their partial state updates. The three specialists own disjoint
-:class:`AgentState` fields (``comparisons``, ``language_diffs``, and the
-trio of ``qa_pairs`` / ``commitments`` / ``commitment_updates``
-respectively) so the reducer never conflicts.
+``language_differ``, ``transcript_analyzer``, and ``peer_reader``
+automatically because each receives an edge from it. The ``synthesizer``
+receives an edge from every specialist; LangGraph fires it once after all
+upstreams have delivered their partial state updates. The four specialists own
+disjoint :class:`AgentState` fields (``comparisons``, ``language_diffs``, the
+trio of ``qa_pairs`` / ``commitments`` / ``commitment_updates``, and
+``peer_context`` respectively) so the reducer never conflicts.
 
 Entry points. The graph is started identically by both the EDGAR watcher and
 the ``POST /api/upload`` route: each constructs a :class:`FilingEvent` and
@@ -62,6 +64,8 @@ from app.agents.language_differ import OWNER as LANGUAGE_DIFFER_OWNER
 from app.agents.language_differ import diff_language
 from app.agents.note_writer import OWNER as NOTE_WRITER_OWNER
 from app.agents.note_writer import write_note
+from app.agents.peer_reader import OWNER as PEER_READER_OWNER
+from app.agents.peer_reader import read_peers
 from app.agents.synthesizer import OWNER as SYNTHESIZER_OWNER
 from app.agents.synthesizer import synthesize_note
 from app.agents.transcript_analyzer import OWNER as TRANSCRIPT_ANALYZER_OWNER
@@ -206,6 +210,27 @@ def _make_transcript_analyzer_node(
     return node
 
 
+def _make_peer_reader_node(
+    *,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> NodeFn:
+    """Return the LangGraph node closure for peer_reader."""
+
+    async def node(state: AgentState) -> dict[str, Any]:
+        async with session_factory() as session:
+            try:
+                update = await read_peers(
+                    state, repository=Repository(session)
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+        return update.changes
+
+    return node
+
+
 def _make_synthesizer_node(
     *,
     llm: LLMClient,
@@ -291,12 +316,12 @@ def build_graph(
     llm: LLMClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compile the Phase 5a graph with three parallel specialist branches.
+    """Compile the Phase 5b graph with four parallel specialist branches.
 
     Topology::
 
         START -> financial_extractor ->
-            [comparator, language_differ, transcript_analyzer] ->
+            [comparator, language_differ, transcript_analyzer, peer_reader] ->
             synthesizer -> critic -> {synthesizer | note_writer -> END | END}
 
     The synthesiser/critic loop is bounded by
@@ -307,15 +332,16 @@ def build_graph(
     which persists the final note and then proceeds to ``END``.
 
     LangGraph's built-in fan-in fires ``synthesizer`` exactly once after
-    ``comparator``, ``language_differ``, and ``transcript_analyzer`` all
-    deliver their partial state updates. The three nodes own disjoint
-    :class:`AgentState` fields (``comparisons``, ``language_diffs``, and
-    the ``qa_pairs`` / ``commitments`` / ``commitment_updates`` trio
-    respectively), so the reducer merges without conflict. Each node
-    self-skips on inapplicable filing types -- the financial trio on
-    ``TRANSCRIPT`` and the transcript analyzer on every other form -- so
-    the parallel block is safe for both EDGAR-filed and user-uploaded
-    sources.
+    ``comparator``, ``language_differ``, ``transcript_analyzer``, and
+    ``peer_reader`` all deliver their partial state updates. The four nodes
+    own disjoint :class:`AgentState` fields (``comparisons``,
+    ``language_diffs``, the ``qa_pairs`` / ``commitments`` /
+    ``commitment_updates`` trio, and ``peer_context`` respectively), so the
+    reducer merges without conflict. Each node self-skips on inapplicable
+    filing types -- the financial trio on ``TRANSCRIPT`` and the transcript
+    analyzer on every other form -- while ``peer_reader`` runs on every type
+    and degrades gracefully when no peers row exists. The parallel block is
+    therefore safe for both EDGAR-filed and user-uploaded sources.
     """
     from app.llm.prompts import load_prompt
 
@@ -345,6 +371,10 @@ def build_graph(
         _make_transcript_analyzer_node(llm=llm, session_factory=session_factory),
     )
     builder.add_node(  # type: ignore[call-overload]
+        PEER_READER_OWNER,
+        _make_peer_reader_node(session_factory=session_factory),
+    )
+    builder.add_node(  # type: ignore[call-overload]
         SYNTHESIZER_OWNER,
         _make_synthesizer_node(llm=llm, session_factory=session_factory),
     )
@@ -365,9 +395,11 @@ def build_graph(
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, COMPARATOR_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, LANGUAGE_DIFFER_OWNER)
     builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, TRANSCRIPT_ANALYZER_OWNER)
+    builder.add_edge(FINANCIAL_EXTRACTOR_OWNER, PEER_READER_OWNER)
     builder.add_edge(COMPARATOR_OWNER, SYNTHESIZER_OWNER)
     builder.add_edge(LANGUAGE_DIFFER_OWNER, SYNTHESIZER_OWNER)
     builder.add_edge(TRANSCRIPT_ANALYZER_OWNER, SYNTHESIZER_OWNER)
+    builder.add_edge(PEER_READER_OWNER, SYNTHESIZER_OWNER)
     builder.add_edge(SYNTHESIZER_OWNER, CRITIC_OWNER)
     builder.add_conditional_edges(
         CRITIC_OWNER,
