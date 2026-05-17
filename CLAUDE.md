@@ -123,6 +123,35 @@ Phase 4B known limitations carried into Phase 5:
 
 Gate evidence at Phase 4B close: ruff clean, mypy clean (47 source files), 301 tests passed + 3 xfailed (modulo the pre-existing `test_missing_anthropic_key_raises` env-leak flake), `coverage report` line coverage 89.41 percent. `pip-audit` reports no known vulnerabilities.
 
+**Phase 5 — Memory writes + peer reader + full critic: complete** (branch `phase-5-memory-peer-critic`, 2026-05-17).
+
+Added in Phase 5a:
+- **`notes` table** (migration 0008) — append-only, one row per accepted filing.
+- **`note_writer` agent node** ([`app/agents/note_writer.py`](app/agents/note_writer.py)) — terminal node after critic ACCEPTED; gracefully degrades on DB error.
+- **Tightened transcript_analyzer prompts** — extract requires explicit period markers; reconcile requires unambiguous evidence. xfail #2 (strict NIMBUS Q2->Q3 reconciliation) retired.
+- **Multi-quarter gate** at [`tests/integration/test_multi_quarter_synthetic_run.py`](tests/integration/test_multi_quarter_synthetic_run.py).
+
+Added in Phase 5b:
+- **`peers` table** (migration 0009) + seed YAML at [`data/peers.yaml`](data/peers.yaml).
+- **`peer_reader` agent node** ([`app/agents/peer_reader.py`](app/agents/peer_reader.py)) — pure DB read; joins parallel fan-out; degrades to empty context on any DB error.
+- **`PeerContextEntry` field** on AgentState owned by `peer_reader`; replaces the Phase 0 placeholder.
+- **`[P#]` citation namespace** in [`app/agents/citations.py`](app/agents/citations.py) + critic resolution.
+- **`synthesizer/full_with_peers_v1.md`** prompt for the peer-aware path.
+- **Seed script**: `uv run python -m app.scripts.seed_peers`.
+
+Added in Phase 5c:
+- **`llm_critic` agent node** ([`app/agents/llm_critic.py`](app/agents/llm_critic.py)) — Opus 0.0; runs sequentially after deterministic critic; catches contradictions, unsupported causal claims, hallucinated peer/commitment refs. Bounded retry shares `state.critic_attempts`.
+- **`prompts/critic/llm_v1.md`** — JSON-output rubric; deterministic critic owns numbers/citations/quote-match.
+- **Adversarial gate**: 30 programmatically-perturbed notes (6 categories x 5 bases) at [`tests/fixtures/adversarial_notes/`](tests/fixtures/adversarial_notes/); combined critic catches 30/30 (target was 27/30).
+- **Critic quote-match relaxed** to score the first quoted substring when the line contains quotes (xfail #3 retired).
+
+Phase 5 known limitations carried into Phase 6:
+- xfail #1 (per-class answer-classification F1 at 0.70 vs spec 0.80) remains. Requires >=25 real public-transcript labels per class.
+- Per-event cost/latency tracking is not persisted; SLO dashboards deferred to Phase 7.
+- Critic findings persistence + agent-action audit log deferred to Phase 6 chat surface scope.
+
+Gate evidence at Phase 5 close: ruff clean, mypy clean (51 source files), all unit + integration tests green modulo xfail #1 and the documented `test_missing_anthropic_key_raises` env-leak flake, `coverage report` line coverage 88.90%, `pip-audit` clean. Phase 5a multi-quarter gate met. Phase 5b peer_reader E2E emits [P#] citations. Phase 5c adversarial gate caught 30/30.
+
 Empty stubs still awaiting later phases — do not assume contents exist:
 `app/delivery/`, `evals/`.
 
