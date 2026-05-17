@@ -112,6 +112,14 @@ Exclude:
 - Historical statements about the quarter just reported.
 - Questions or statements from analysts.
 
+COMMITMENT REQUIREMENT - EXPLICIT PERIOD: A commitment MUST contain an
+explicit forward-looking period marker. Acceptable markers include
+"Q1", "Q2", "Q3", "Q4", "next quarter", "next fiscal year", "by year-end",
+"in [calendar quarter]", "FY26", "in 2026", or any specific calendar
+date. If management speaks aspirationally without naming a period
+(e.g., "we hope to grow margins"), do NOT extract it. Extract only
+commitments tied to an identifiable period.
+
 Verbatim discipline: `question_text`, `answer_text`, and `source_quote` must
 be exact substrings of the transcript. Whitespace normalisation is acceptable,
 but no paraphrasing - downstream code matches these spans against the
