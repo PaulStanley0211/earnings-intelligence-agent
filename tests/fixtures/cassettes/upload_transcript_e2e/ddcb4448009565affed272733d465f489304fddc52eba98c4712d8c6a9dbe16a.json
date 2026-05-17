@@ -1,0 +1,8 @@
+{
+  "cost_usd": 0.11295,
+  "input_tokens": 4475,
+  "model": "claude-opus-4-7",
+  "output_tokens": 611,
+  "prompt_version": "synthesizer/full_v1@v1#60421649",
+  "text": "## Headline\n\nNimbus management used its earnings call to reiterate fiscal 2026 revenue guidance, raise the full-year non-GAAP operating margin outlook, and detail integration plans for the pending Cirrus Analytics acquisition.\n\n## Q&A signals\n\n- On Cirrus integration, CEO Daniel Cho said native query capabilities would be \"generally available inside the Stratus console by the end of fiscal Q4 2026\" [Q1], with early modelling pointing to \"roughly 40 million dollars of incremental ARR\" in fiscal 2027 [Q1].\n- On the margin raise, CFO Helena Vargas attributed \"about 60 basis points to the hiring slowdown\" and \"about 40 basis points to underlying gross-margin improvement in Stratus\" [Q2].\n- On competitive positioning, Cho said win rate against hyperscaler-native offerings \"remained above 75 percent in Q2 in competitive deals we tracked\" [Q7], adding that Nimbus has \"not lost a single seven-figure customer to a hyperscaler-native tool in the last twelve months\" [Q7].\n\n## Commitments\n\n- Management reiterated full-year fiscal 2026 revenue guidance of $2.55\u2013$2.60 billion [K2] and raised the non-GAAP operating margin outlook to approximately 19% from a prior 18% [K3].\n- Management guided to positive GAAP operating income for full-year fiscal 2026, which would be a first for the company [K4].\n- Management expects to close the Cirrus Analytics acquisition by the end of fiscal Q3 2026 [K1], with native Cirrus query capabilities in the Stratus console by end of fiscal Q4 2026 [K5] and roughly $40 million of incremental ARR cross-sell in fiscal 2027 [K6]."
+}
