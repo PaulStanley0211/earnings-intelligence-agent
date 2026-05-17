@@ -455,3 +455,19 @@ async def test_chat_returns_501_stub(app_with_stubbed_graph: AsyncClient) -> Non
     assert response.status_code == 501
     detail = response.json()["detail"].lower()
     assert "phase 6" in detail
+
+
+def test_filing_type_form_literal_matches_filing_form_enum() -> None:
+    """Drift guard: the /api/upload Literal allowlist must mirror FilingForm.
+
+    If a future phase adds a value to :class:`app.models.state.FilingForm`,
+    this test fails until the API ``FilingTypeForm`` Literal is updated to
+    match. Catches the single-line oversight where a new form lands in the
+    enum but the route still rejects it at the boundary with a 422.
+    """
+    from typing import get_args
+
+    from app.api.upload import FilingTypeForm
+    from app.models.state import FilingForm
+
+    assert set(get_args(FilingTypeForm)) == {m.value for m in FilingForm}
