@@ -126,14 +126,34 @@ class _StubEmbeddings:
         ]
 
 
+_LLM_CRITIC_JSON = '{"findings": []}'
+"""Canned LLM critic response: no semantic findings, note accepted."""
+
+_LLM_CRITIC_MARKER = '<source name="draft_note">'
+"""Substring present in every rendered llm_v1 prompt body, absent from all others."""
+
+
 def _stub_anthropic(text_: str) -> MagicMock:
-    """Return a MagicMock Anthropic client that always produces ``text_``."""
+    """Return a MagicMock Anthropic client that routes by call content.
+
+    LLM critic calls are detected via the ``<source name="draft_note">`` marker
+    in the rendered prompt body and receive a clean ``{"findings": []}`` response.
+    All other calls receive ``text_``.
+    """
     client = MagicMock()
-    msg = MagicMock(
-        content=[MagicMock(type="text", text=text_)],
-        usage=MagicMock(input_tokens=100, output_tokens=80),
-    )
-    client.messages.create.return_value = msg
+
+    def _create(**kwargs: Any) -> MagicMock:
+        messages: list[dict[str, str]] = kwargs.get("messages", [])
+        user_text = " ".join(
+            str(m.get("content", "")) for m in messages if m.get("role") == "user"
+        )
+        response_text = _LLM_CRITIC_JSON if _LLM_CRITIC_MARKER in user_text else text_
+        return MagicMock(
+            content=[MagicMock(type="text", text=response_text)],
+            usage=MagicMock(input_tokens=100, output_tokens=80),
+        )
+
+    client.messages.create.side_effect = _create
     return client
 
 

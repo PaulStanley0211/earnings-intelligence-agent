@@ -194,11 +194,21 @@ _SYNTH_NOTE: str = (
 # ---------------------------------------------------------------------------
 
 
+_LLM_CRITIC_JSON = '{"findings": []}'
+"""Canned LLM critic response: no semantic findings, note accepted."""
+
+_LLM_CRITIC_MARKER = '<source name="draft_note">'
+"""Substring present in every rendered llm_v1 prompt body, absent from all others."""
+
+
 def _make_nimbus_stub() -> MagicMock:
     """Return a MagicMock Anthropic client that routes by call content.
 
-    Three call types are handled:
+    Four call types are handled (checked in priority order):
 
+    * **LLM critic**: the rendered prompt contains
+      ``<source name="draft_note">`` (from ``llm_v1.md``).
+      Returns :data:`_LLM_CRITIC_JSON` (clean, no findings).
     * **Reconcile**: the rendered prompt contains
       ``<source type="prior_commitments">`` (from ``reconcile_v1.md``).
       Returns :data:`_Q3_RECONCILE_JSON`.
@@ -219,8 +229,11 @@ def _make_nimbus_stub() -> MagicMock:
         )
         model: str = str(kwargs.get("model", ""))
 
+        # LLM critic call: detected by the draft_note source block marker.
+        if _LLM_CRITIC_MARKER in user_text:
+            response_text = _LLM_CRITIC_JSON
         # Reconcile call: the rendered prompt contains the prior_commitments block
-        if "<source type=" in user_text and "prior_commitments" in user_text:
+        elif "<source type=" in user_text and "prior_commitments" in user_text:
             response_text = _Q3_RECONCILE_JSON
         elif "claude-sonnet" in model or "sonnet" in model.lower():
             # Extract pass: distinguish Q2 from Q3 by presence of Q3-specific phrase

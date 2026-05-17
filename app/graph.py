@@ -1,14 +1,19 @@
 """LangGraph orchestrator.
 
-Phase 5b extends the topology to add ``peer_reader`` to the parallel fan-out::
+Phase 5c extends the topology to insert ``llm_critic`` between the
+deterministic critic and ``note_writer``::
 
     START
       -> financial_extractor*
       -> [comparator*, language_differ*, transcript_analyzer*, peer_reader]  (parallel)
       -> synthesizer                                                          (waits for all)
       -> critic
-      -> (rejected -> synthesizer, accepted -> note_writer -> END,
+      -> (rejected -> synthesizer,
+          accepted -> llm_critic,
           loop_exceeded -> END)
+      llm_critic -> (rejected -> synthesizer,
+                     accepted -> note_writer -> END,
+                     loop_exceeded -> END)
 
 ``*`` means each node self-skips on inapplicable filing types and yields an
 empty :class:`~app.models.state.StateUpdate`: ``financial_extractor``,
@@ -62,6 +67,7 @@ from app.agents.financial_extractor import OWNER as FINANCIAL_EXTRACTOR_OWNER
 from app.agents.financial_extractor import extract_financials
 from app.agents.language_differ import OWNER as LANGUAGE_DIFFER_OWNER
 from app.agents.language_differ import diff_language
+from app.agents.llm_critic import llm_critique
 from app.agents.note_writer import OWNER as NOTE_WRITER_OWNER
 from app.agents.note_writer import write_note
 from app.agents.peer_reader import OWNER as PEER_READER_OWNER
@@ -108,6 +114,14 @@ class _SupportsEmbed(Protocol):
 
 
 NodeFn = Callable[[AgentState], Awaitable[dict[str, Any]]]
+
+LLM_CRITIC_NODE_NAME = "llm_critic"
+"""Graph node name for the LLM critic.
+
+Kept separate from ``CRITIC_OWNER`` (``"critic"``) because both the
+deterministic and LLM critic share the same :data:`~app.agents.llm_critic.OWNER`
+field-ownership string while occupying distinct positions in the topology.
+"""
 
 
 def _make_financial_extractor_node(
@@ -267,6 +281,28 @@ def _make_critic_node() -> NodeFn:
     return node
 
 
+def _make_llm_critic_node(
+    *,
+    llm: LLMClient,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> NodeFn:
+    """Return the LangGraph node closure for the LLM critic."""
+
+    async def node(state: AgentState) -> dict[str, Any]:
+        async with session_factory() as session:
+            try:
+                update = await llm_critique(
+                    state, llm=llm, repository=Repository(session)
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+        return update.changes
+
+    return node
+
+
 def _make_note_writer_node(
     *,
     session_factory: async_sessionmaker[AsyncSession],
@@ -300,12 +336,21 @@ def _make_note_writer_node(
 
 
 def _critic_router(state: AgentState) -> str:
+    """Decide whether to retry the synthesiser or proceed to the LLM critic."""
+    if state.critic_verdict is CriticVerdict.REJECTED:
+        return SYNTHESIZER_OWNER
+    if state.critic_verdict is CriticVerdict.ACCEPTED:
+        return LLM_CRITIC_NODE_NAME
+    return END  # LOOP_EXCEEDED
+
+
+def _llm_critic_router(state: AgentState) -> str:
     """Decide whether to retry the synthesiser, persist, or end the run."""
     if state.critic_verdict is CriticVerdict.REJECTED:
         return SYNTHESIZER_OWNER
     if state.critic_verdict is CriticVerdict.ACCEPTED:
         return NOTE_WRITER_OWNER
-    return END  # LOOP_EXCEEDED
+    return END
 
 
 def build_graph(
@@ -316,20 +361,23 @@ def build_graph(
     llm: LLMClient,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
-    """Compile the Phase 5b graph with four parallel specialist branches.
+    """Compile the Phase 5c graph with four parallel specialist branches.
 
     Topology::
 
         START -> financial_extractor ->
             [comparator, language_differ, transcript_analyzer, peer_reader] ->
-            synthesizer -> critic -> {synthesizer | note_writer -> END | END}
+            synthesizer -> critic -> {synthesizer | llm_critic | END}
+            llm_critic -> {synthesizer | note_writer -> END | END}
 
     The synthesiser/critic loop is bounded by
     :data:`~app.agents.critic._MAX_CRITIC_ATTEMPTS`; when the budget is
-    spent the critic emits a ``LOOP_EXCEEDED`` verdict and the router
-    routes directly to ``END`` so the note is held for manual review.
-    When the critic accepts, the router sends the run to ``note_writer``
-    which persists the final note and then proceeds to ``END``.
+    spent the deterministic critic emits a ``LOOP_EXCEEDED`` verdict and
+    the router routes directly to ``END`` so the note is held for manual
+    review.  When the deterministic critic accepts, the router forwards to
+    ``llm_critic`` which performs a semantic pass and then either rejects
+    (routing back to the synthesiser), accepts (routing to ``note_writer``),
+    or exhausts the retry budget (routing to ``END``).
 
     LangGraph's built-in fan-in fires ``synthesizer`` exactly once after
     ``comparator``, ``language_differ``, ``transcript_analyzer``, and
@@ -382,7 +430,12 @@ def build_graph(
         CRITIC_OWNER,
         _make_critic_node(),
     )
-    # Phase 5a: note_writer runs after the critic accepts.
+    # Phase 5c: llm_critic sits between the deterministic critic and note_writer.
+    builder.add_node(  # type: ignore[call-overload]
+        LLM_CRITIC_NODE_NAME,
+        _make_llm_critic_node(llm=llm, session_factory=session_factory),
+    )
+    # Phase 5a: note_writer runs after both critics accept.
     builder.add_node(  # type: ignore[call-overload]
         NOTE_WRITER_OWNER,
         _make_note_writer_node(
@@ -404,6 +457,15 @@ def build_graph(
     builder.add_conditional_edges(
         CRITIC_OWNER,
         _critic_router,
+        {
+            SYNTHESIZER_OWNER: SYNTHESIZER_OWNER,
+            LLM_CRITIC_NODE_NAME: LLM_CRITIC_NODE_NAME,
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        LLM_CRITIC_NODE_NAME,
+        _llm_critic_router,
         {
             SYNTHESIZER_OWNER: SYNTHESIZER_OWNER,
             NOTE_WRITER_OWNER: NOTE_WRITER_OWNER,
